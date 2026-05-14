@@ -4,10 +4,12 @@
 
 ## 功能概览
 
-- 新增、查看、删除会员订阅记录
+- 新增、查看、编辑、删除会员订阅记录
 - 支持月付和年付两种计费周期
+- 每个订阅项目可维护多位使用人员及邮箱
+- 支持订阅到期邮件提醒，可配置是否启用和提前提醒天数
 - 自动统计预估月度支出和年度支出
-- 后端提供 REST API 和健康检查接口
+- 后端提供 REST API、健康检查接口和手动执行提醒接口
 - 前端默认通过同域 `/api` 访问后端，便于 Docker 反向代理部署
 
 ## 技术栈
@@ -18,6 +20,7 @@
 - Express
 - Prisma
 - SQLite
+- Nodemailer
 - dotenv
 - cors
 
@@ -108,7 +111,22 @@ cp .env.example .env
 WEB_PORT=9527
 FRONTEND_ORIGIN=http://localhost:9527
 DATABASE_URL=file:/app/data/prod.db
+REMINDER_CHECK_INTERVAL_MINUTES=60
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
 ```
+
+邮件提醒说明：
+
+- `REMINDER_CHECK_INTERVAL_MINUTES`：后端定时扫描提醒任务的间隔，单位分钟，设为 `0` 可关闭自动扫描。
+- `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE`：SMTP 服务地址、端口和是否启用 SSL。
+- `SMTP_USER` / `SMTP_PASS`：SMTP 认证账号密码，可按邮件服务商要求填写授权码。
+- `SMTP_FROM`：发件人邮箱，例如 `noreply@example.com`。
+- 未配置 SMTP 时，系统仍可保存提醒规则，也可手动执行提醒检查，但会跳过真实邮件发送。
 
 如果直接通过服务器 IP 访问，把 `FRONTEND_ORIGIN` 改成实际访问地址：
 
@@ -124,6 +142,13 @@ DATABASE_URL=file:/app/data/prod.db
 WEB_PORT=9527
 FRONTEND_ORIGIN=https://example.com
 DATABASE_URL=file:/app/data/prod.db
+REMINDER_CHECK_INTERVAL_MINUTES=60
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=mailer@example.com
+SMTP_PASS=your_password
+SMTP_FROM=mailer@example.com
 ```
 
 ### 3. 启动服务
@@ -142,6 +167,12 @@ http://localhost:9527
 
 ```bash
 curl http://localhost:9527/health
+```
+
+手动执行到期提醒：
+
+```bash
+curl -X POST http://localhost:9527/api/reminders/run
 ```
 
 查看容器状态和日志：

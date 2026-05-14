@@ -8,12 +8,29 @@ datasource db {
 }
 
 model Subscription {
-  id              Int      @id @default(autoincrement())
-  platform        String
-  planType        String
-  price           Float
-  billingCycle    String
-  nextBillingDate DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                     Int                @id @default(autoincrement())
+  platform               String
+  planType               String
+  price                  Float
+  billingCycle           String
+  nextBillingDate        DateTime
+  reminderEnabled        Boolean            @default(false)
+  reminderDays           Int                @default(3)
+  lastReminderSentAt     DateTime?
+  lastReminderTargetDate DateTime?
+  users                  SubscriptionUser[]
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+}
+
+model SubscriptionUser {
+  id             Int           @id @default(autoincrement())
+  subscriptionId Int
+  name           String
+  email          String?
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([subscriptionId])
 }

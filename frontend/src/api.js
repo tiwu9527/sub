@@ -15,8 +15,18 @@ export async function createSubscription(payload) {
   return data;
 }
 
+export async function updateSubscription(id, payload) {
+  const { data } = await api.put(`/subscriptions/${id}`, payload);
+  return data;
+}
+
 export async function deleteSubscription(id) {
   await api.delete(`/subscriptions/${id}`);
+}
+
+export async function runReminderCheck() {
+  const { data } = await api.post('/reminders/run');
+  return data;
 }
 
 export function getApiErrorMessage(error) {
