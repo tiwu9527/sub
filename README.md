@@ -1,4 +1,4 @@
-# 个人会员订阅管理面板
+# sub
 
 一个前后端分离的个人订阅管理 Dashboard。后端使用 Node.js、Express、Prisma 和 SQLite，前端使用 Vue 3、Vite、Tailwind CSS 和 Axios。
 
@@ -93,8 +93,8 @@ docker compose version
 拉取源码：
 
 ```bash
-git clone https://github.com/tiwu9527/subscription-dashboard-demo.git
-cd subscription-dashboard-demo
+git clone https://github.com/tiwu9527/sub.git
+cd sub
 ```
 
 ### 2. 配置部署变量

@@ -49,9 +49,27 @@ const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'UTC'
 });
 
+const billingCycleMeta = {
+  monthly: {
+    label: '月付',
+    tagClass: 'bg-cyan-400/10 text-cyan-200 ring-cyan-300/30',
+    monthlyDivisor: 1
+  },
+  quarterly: {
+    label: '季付',
+    tagClass: 'bg-emerald-400/10 text-emerald-200 ring-emerald-300/30',
+    monthlyDivisor: 3
+  },
+  yearly: {
+    label: '年付',
+    tagClass: 'bg-violet-400/10 text-violet-200 ring-violet-300/30',
+    monthlyDivisor: 12
+  }
+};
+
 const monthlyTotal = computed(() => {
   return subscriptions.value.reduce((total, subscription) => {
-    return total + (subscription.billingCycle === 'yearly' ? subscription.price / 12 : subscription.price);
+    return total + getMonthlyEquivalent(subscription);
   }, 0);
 });
 
@@ -99,6 +117,23 @@ function formatDate(value) {
   if (!dateKey) return '-';
 
   return dateFormatter.format(new Date(`${dateKey}T00:00:00.000Z`));
+}
+
+function getBillingCycleMeta(billingCycle) {
+  return billingCycleMeta[billingCycle] || billingCycleMeta.monthly;
+}
+
+function getBillingCycleLabel(billingCycle) {
+  return getBillingCycleMeta(billingCycle).label;
+}
+
+function getBillingCycleTagClass(billingCycle) {
+  return getBillingCycleMeta(billingCycle).tagClass;
+}
+
+function getMonthlyEquivalent(subscription) {
+  const divisor = getBillingCycleMeta(subscription.billingCycle).monthlyDivisor;
+  return subscription.price / divisor;
 }
 
 function formatReminderStatus(subscription) {
@@ -266,8 +301,8 @@ onMounted(loadSubscriptions);
     <section class="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p class="mb-2 text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">Subscription Hub</p>
-          <h1 class="text-3xl font-bold tracking-tight text-white sm:text-5xl">个人会员订阅管理面板</h1>
+          <p class="mb-2 text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">sub</p>
+          <h1 class="text-3xl font-bold tracking-tight text-white sm:text-5xl">sub</h1>
           <p class="mt-3 max-w-2xl text-slate-400">集中管理平台订阅、使用人员和到期提醒，避免重复付费和遗漏续费。</p>
         </div>
         <div class="flex flex-wrap gap-3">
@@ -293,7 +328,7 @@ onMounted(loadSubscriptions);
         <article class="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl backdrop-blur">
           <p class="text-sm text-slate-400">本月预估总支出</p>
           <p class="mt-3 text-3xl font-bold text-white">{{ formatCurrency(monthlyTotal) }}</p>
-          <p class="mt-2 text-xs text-cyan-200">年付订阅已均摊到每月</p>
+          <p class="mt-2 text-xs text-cyan-200">季付、年付订阅已均摊到每月</p>
         </article>
         <article class="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl backdrop-blur">
           <p class="text-sm text-slate-400">全年预估总支出</p>
@@ -357,6 +392,7 @@ onMounted(loadSubscriptions);
                 <span class="text-sm font-medium text-slate-300">计费周期</span>
                 <select v-model="form.billingCycle" class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-white outline-none transition focus:border-cyan-300">
                   <option value="monthly">月付</option>
+                  <option value="quarterly">季付</option>
                   <option value="yearly">年付</option>
                 </select>
               </label>
@@ -449,8 +485,8 @@ onMounted(loadSubscriptions);
                 <div>
                   <div class="flex flex-wrap items-center gap-2">
                     <p class="text-lg font-semibold text-white">{{ subscription.platform }}</p>
-                    <span :class="subscription.billingCycle === 'monthly' ? 'bg-cyan-400/10 text-cyan-200 ring-cyan-300/30' : 'bg-violet-400/10 text-violet-200 ring-violet-300/30'" class="inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1">
-                      {{ subscription.billingCycle === 'monthly' ? '月付' : '年付' }}
+                    <span :class="getBillingCycleTagClass(subscription.billingCycle)" class="inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1">
+                      {{ getBillingCycleLabel(subscription.billingCycle) }}
                     </span>
                     <span v-if="subscription.reminderEnabled" class="inline-flex rounded-full bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200 ring-1 ring-amber-300/30">
                       已启用提醒

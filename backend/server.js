@@ -9,7 +9,12 @@ const prisma = new PrismaClient();
 
 const port = Number(process.env.PORT || 3001);
 const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
-const allowedBillingCycles = new Set(['monthly', 'yearly']);
+const billingCycleLabels = {
+  monthly: '月付',
+  quarterly: '季付',
+  yearly: '年付'
+};
+const allowedBillingCycles = new Set(Object.keys(billingCycleLabels));
 const reminderCheckIntervalMinutes = Math.max(0, Number(process.env.REMINDER_CHECK_INTERVAL_MINUTES || 60));
 const oneDayMs = 24 * 60 * 60 * 1000;
 const reminderTransporter = createReminderTransporter();
@@ -82,6 +87,16 @@ function formatReminderDate(value) {
   }).format(new Date(value));
 }
 
+function getMonthlyEquivalent(subscription) {
+  if (subscription.billingCycle === 'yearly') return subscription.price / 12;
+  if (subscription.billingCycle === 'quarterly') return subscription.price / 3;
+  return subscription.price;
+}
+
+function getBillingCycleLabel(billingCycle) {
+  return billingCycleLabels[billingCycle] || billingCycle;
+}
+
 function normalizeUsers(inputUsers, errors) {
   if (inputUsers == null) return [];
 
@@ -123,7 +138,7 @@ function parseSubscriptionPayload(body) {
   if (!platform) errors.push('平台名称不能为空');
   if (!planType) errors.push('订阅种类不能为空');
   if (!Number.isFinite(price) || price < 0) errors.push('订阅价格必须是大于或等于 0 的数字');
-  if (!allowedBillingCycles.has(billingCycle)) errors.push('计费周期只能是 monthly 或 yearly');
+  if (!allowedBillingCycles.has(billingCycle)) errors.push('计费周期只能是 monthly、quarterly 或 yearly');
   if (!body.nextBillingDate || Number.isNaN(nextBillingDate.getTime())) errors.push('下次扣费日期格式无效');
   if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 365) errors.push('提醒天数必须是 0 到 365 之间的整数');
 
@@ -144,7 +159,7 @@ function parseSubscriptionPayload(body) {
 
 function buildReminderEmail(subscription) {
   const dueDateText = formatReminderDate(subscription.nextBillingDate);
-  const cycleText = subscription.billingCycle === 'yearly' ? '年付' : '月付';
+  const cycleText = getBillingCycleLabel(subscription.billingCycle);
   const recipients = [...new Set(subscription.users.map((user) => user.email).filter(Boolean))];
   const subject = `[订阅到期提醒] ${subscription.platform} 将于 ${dueDateText} 到期`;
   const userList = subscription.users.map((user) => user.name).join('、') || '未填写';
@@ -347,9 +362,7 @@ app.get('/api/subscriptions', async (req, res, next) => {
 app.get('/api/subscriptions/summary', async (req, res, next) => {
   try {
     const subscriptions = await prisma.subscription.findMany();
-    const monthlyTotal = subscriptions.reduce((total, subscription) => {
-      return total + (subscription.billingCycle === 'yearly' ? subscription.price / 12 : subscription.price);
-    }, 0);
+    const monthlyTotal = subscriptions.reduce((total, subscription) => total + getMonthlyEquivalent(subscription), 0);
 
     res.json({
       monthlyTotal: Number(monthlyTotal.toFixed(2)),
