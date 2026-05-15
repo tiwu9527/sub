@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
+import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
 const app = express();
@@ -9,6 +10,10 @@ const prisma = new PrismaClient();
 
 const port = Number(process.env.PORT || 3001);
 const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+const adminUsername = String(process.env.ADMIN_USERNAME || 'admin').trim();
+const adminPassword = String(process.env.ADMIN_PASSWORD || 'admin123456');
+const authTokenSecret = String(process.env.AUTH_TOKEN_SECRET || 'sub-dev-token-secret');
+const authTokenTtlHours = Math.max(1, Number(process.env.AUTH_TOKEN_TTL_HOURS || 24));
 const billingCycleLabels = {
   monthly: '月付',
   quarterly: '季付',
@@ -24,6 +29,97 @@ let reminderJobRunning = false;
 
 app.use(cors({ origin: frontendOrigin }));
 app.use(express.json());
+
+function encodeBase64Url(value) {
+  return Buffer.from(value).toString('base64url');
+}
+
+function decodeBase64Url(value) {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function signTokenPayload(payload) {
+  return crypto.createHmac('sha256', authTokenSecret).update(payload).digest('base64url');
+}
+
+function createAuthToken(username) {
+  const expiresAt = new Date(Date.now() + authTokenTtlHours * 60 * 60 * 1000);
+  const payload = encodeBase64Url(
+    JSON.stringify({
+      username,
+      exp: expiresAt.getTime()
+    })
+  );
+  const signature = signTokenPayload(payload);
+
+  return {
+    token: `${payload}.${signature}`,
+    username,
+    expiresAt: expiresAt.toISOString()
+  };
+}
+
+function verifyAuthToken(token) {
+  const [payload, signature] = String(token || '').split('.');
+
+  if (!payload || !signature) {
+    return null;
+  }
+
+  const expectedSignature = signTokenPayload(payload);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedSignatureBuffer = Buffer.from(expectedSignature);
+
+  if (
+    signatureBuffer.length !== expectedSignatureBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)
+  ) {
+    return null;
+  }
+
+  try {
+    const session = JSON.parse(decodeBase64Url(payload));
+    const expiresAt = Number(session.exp);
+
+    if (session.username !== adminUsername || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return null;
+    }
+
+    return {
+      username: session.username,
+      expiresAt: new Date(expiresAt).toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function verifyPassword(inputPassword) {
+  const expectedPasswordBuffer = Buffer.from(adminPassword);
+  const inputPasswordBuffer = Buffer.from(String(inputPassword || ''));
+
+  return (
+    inputPasswordBuffer.length === expectedPasswordBuffer.length &&
+    crypto.timingSafeEqual(inputPasswordBuffer, expectedPasswordBuffer)
+  );
+}
+
+function requireAuth(req, res, next) {
+  const [scheme, token] = String(req.headers.authorization || '').split(' ');
+
+  if (scheme !== 'Bearer') {
+    return res.status(401).json({ message: '请先登录后再访问管理页面' });
+  }
+
+  const session = verifyAuthToken(token);
+
+  if (!session) {
+    return res.status(401).json({ message: '登录已失效，请重新登录' });
+  }
+
+  req.adminSession = session;
+  return next();
+}
 
 function createReminderMailer() {
   const host = String(process.env.SMTP_HOST || '').trim();
@@ -393,6 +489,24 @@ function toSubscriptionResponseInclude() {
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
+
+app.post('/api/auth/login', (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
+
+  if (username !== adminUsername || !verifyPassword(password)) {
+    return res.status(401).json({ message: '账号或密码错误' });
+  }
+
+  return res.json(createAuthToken(username));
+});
+
+app.get('/api/auth/session', requireAuth, (req, res) => {
+  res.json(req.adminSession);
+});
+
+app.use('/api/subscriptions', requireAuth);
+app.use('/api/reminders', requireAuth);
 
 app.get('/api/subscriptions', async (req, res, next) => {
   try {

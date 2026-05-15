@@ -9,6 +9,7 @@
 - 每个订阅项目可维护多位使用人员及邮箱
 - 支持订阅到期邮件提醒，可配置是否启用和提前提醒天数
 - 自动统计预估月度支出和年度支出
+- 支持管理账号密码登录，登录后才能访问订阅管理 API
 - 后端提供 REST API、健康检查接口和手动执行提醒接口
 - 前端默认通过同域 `/api` 访问后端，便于 Docker 反向代理部署
 
@@ -111,6 +112,10 @@ cp .env.example .env
 WEB_PORT=9527
 FRONTEND_ORIGIN=http://localhost:9527
 DATABASE_URL=file:/app/data/prod.db
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123456
+AUTH_TOKEN_SECRET=change_this_to_a_long_random_secret
+AUTH_TOKEN_TTL_HOURS=24
 REMINDER_CHECK_INTERVAL_MINUTES=60
 SMTP_HOST=
 SMTP_PORT=587
@@ -119,6 +124,13 @@ SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
 ```
+
+管理登录说明：
+
+- `ADMIN_USERNAME` / `ADMIN_PASSWORD`：管理页面登录账号和密码，首次部署后请立即改成自己的账号密码。
+- `AUTH_TOKEN_SECRET`：登录 token 签名密钥，生产环境请改成足够长的随机字符串。
+- `AUTH_TOKEN_TTL_HOURS`：登录有效期，单位小时，默认 24 小时。
+- 默认登录账号为 `admin`，默认密码为 `admin123456`。
 
 邮件提醒说明：
 
@@ -135,6 +147,9 @@ SMTP_FROM=
 WEB_PORT=9527
 FRONTEND_ORIGIN=http://your_server_ip:9527
 DATABASE_URL=file:/app/data/prod.db
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace_with_a_strong_password
+AUTH_TOKEN_SECRET=replace_with_a_long_random_secret
 ```
 
 如果使用域名和 HTTPS，并由服务器上的 Nginx/Caddy 反向代理到 Docker 服务：
@@ -143,6 +158,9 @@ DATABASE_URL=file:/app/data/prod.db
 WEB_PORT=9527
 FRONTEND_ORIGIN=https://example.com
 DATABASE_URL=file:/app/data/prod.db
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace_with_a_strong_password
+AUTH_TOKEN_SECRET=replace_with_a_long_random_secret
 REMINDER_CHECK_INTERVAL_MINUTES=60
 SMTP_HOST=smtp.example.com
 SMTP_PORT=465

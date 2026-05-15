@@ -1,14 +1,25 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import {
+  clearAuthSession,
   createSubscription,
   deleteSubscription,
   fetchSubscriptions,
   getApiErrorMessage,
+  getStoredAdminUsername,
+  getStoredAuthToken,
+  isUnauthorizedError,
+  loginAdmin,
   runReminderCheck,
-  updateSubscription
+  updateSubscription,
+  verifyAdminSession
 } from './api';
 
+const isAuthenticated = ref(Boolean(getStoredAuthToken()));
+const sessionChecking = ref(true);
+const adminUsername = ref(getStoredAdminUsername());
+const loginSubmitting = ref(false);
+const loginError = ref('');
 const subscriptions = ref([]);
 const loading = ref(false);
 const submitting = ref(false);
@@ -18,6 +29,11 @@ const reminderRunning = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 const reminderDetails = ref([]);
+
+const loginForm = reactive({
+  username: adminUsername.value || 'admin',
+  password: ''
+});
 
 function createEmptyUser() {
   return {
@@ -151,6 +167,24 @@ function getReminderDetailClass(status) {
   return 'border-amber-300/20 bg-amber-500/10 text-amber-100';
 }
 
+function applySession(session) {
+  isAuthenticated.value = true;
+  adminUsername.value = session.username || loginForm.username;
+  loginForm.username = adminUsername.value;
+  loginForm.password = '';
+  loginError.value = '';
+}
+
+function handleUnauthorized(error) {
+  if (!isUnauthorizedError(error)) return false;
+
+  clearAuthSession();
+  isAuthenticated.value = false;
+  subscriptions.value = [];
+  loginError.value = getApiErrorMessage(error);
+  return true;
+}
+
 function setUsers(users = []) {
   const nextUsers = users.length > 0 ? users : [createEmptyUser()];
   form.users.splice(
@@ -220,12 +254,15 @@ function removeUser(index) {
 }
 
 async function loadSubscriptions() {
+  if (!isAuthenticated.value) return;
+
   loading.value = true;
   errorMessage.value = '';
 
   try {
     subscriptions.value = await fetchSubscriptions();
   } catch (error) {
+    if (handleUnauthorized(error)) return;
     errorMessage.value = getApiErrorMessage(error);
   } finally {
     loading.value = false;
@@ -250,6 +287,7 @@ async function handleSubmit() {
     resetForm();
     await loadSubscriptions();
   } catch (error) {
+    if (handleUnauthorized(error)) return;
     errorMessage.value = getApiErrorMessage(error);
   } finally {
     submitting.value = false;
@@ -275,6 +313,7 @@ async function handleDelete(subscription) {
     successMessage.value = '订阅已删除';
     await loadSubscriptions();
   } catch (error) {
+    if (handleUnauthorized(error)) return;
     errorMessage.value = getApiErrorMessage(error);
   } finally {
     deletingId.value = null;
@@ -298,13 +337,65 @@ async function handleRunReminderCheck() {
     reminderDetails.value = Array.isArray(result.details) ? result.details : [];
     await loadSubscriptions();
   } catch (error) {
+    if (handleUnauthorized(error)) return;
     errorMessage.value = getApiErrorMessage(error);
   } finally {
     reminderRunning.value = false;
   }
 }
 
-onMounted(loadSubscriptions);
+async function handleLogin() {
+  loginSubmitting.value = true;
+  loginError.value = '';
+
+  try {
+    const session = await loginAdmin({
+      username: loginForm.username,
+      password: loginForm.password
+    });
+
+    applySession(session);
+    await loadSubscriptions();
+  } catch (error) {
+    loginError.value = getApiErrorMessage(error);
+  } finally {
+    loginSubmitting.value = false;
+  }
+}
+
+function handleLogout() {
+  clearAuthSession();
+  isAuthenticated.value = false;
+  subscriptions.value = [];
+  resetForm();
+  errorMessage.value = '';
+  successMessage.value = '';
+  reminderDetails.value = [];
+}
+
+async function initializeApp() {
+  if (!getStoredAuthToken()) {
+    sessionChecking.value = false;
+    return;
+  }
+
+  try {
+    const session = await verifyAdminSession();
+    applySession(session);
+    await loadSubscriptions();
+  } catch (error) {
+    if (!handleUnauthorized(error)) {
+      clearAuthSession();
+      isAuthenticated.value = false;
+      subscriptions.value = [];
+      loginError.value = getApiErrorMessage(error);
+    }
+  } finally {
+    sessionChecking.value = false;
+  }
+}
+
+onMounted(initializeApp);
 </script>
 
 <template>
@@ -314,7 +405,60 @@ onMounted(loadSubscriptions);
       <div class="absolute right-0 top-32 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl"></div>
     </div>
 
-    <section class="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <section v-if="sessionChecking" class="relative flex min-h-screen items-center justify-center px-4">
+      <div class="rounded-3xl border border-white/10 bg-white/[0.07] px-8 py-6 text-center shadow-2xl backdrop-blur">
+        <p class="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">sub</p>
+        <p class="mt-3 text-slate-300">正在校验登录状态...</p>
+      </div>
+    </section>
+
+    <section v-else-if="!isAuthenticated" class="relative flex min-h-screen items-center justify-center px-4 py-8">
+      <div class="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur sm:p-8">
+        <div class="mb-8">
+          <p class="mb-2 text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">sub</p>
+          <h1 class="text-3xl font-bold tracking-tight text-white">管理登录</h1>
+        </div>
+
+        <div v-if="loginError" class="mb-5 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {{ loginError }}
+        </div>
+
+        <form class="space-y-5" @submit.prevent="handleLogin">
+          <label class="block">
+            <span class="text-sm font-medium text-slate-300">账号</span>
+            <input
+              v-model.trim="loginForm.username"
+              autocomplete="username"
+              class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
+              placeholder="admin"
+              required
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-medium text-slate-300">密码</span>
+            <input
+              v-model="loginForm.password"
+              autocomplete="current-password"
+              class="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
+              placeholder="请输入密码"
+              required
+              type="password"
+            />
+          </label>
+
+          <button
+            class="w-full rounded-2xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="loginSubmitting"
+            type="submit"
+          >
+            {{ loginSubmitting ? '登录中...' : '登录' }}
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section v-else class="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <p class="mb-2 text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">sub</p>
@@ -322,6 +466,9 @@ onMounted(loadSubscriptions);
           <p class="mt-3 max-w-2xl text-slate-400">集中管理平台订阅、使用人员和到期提醒，避免重复付费和遗漏续费。</p>
         </div>
         <div class="flex flex-wrap gap-3">
+          <span class="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
+            {{ adminUsername }}
+          </span>
           <button
             class="rounded-full border border-emerald-300/20 bg-emerald-500/10 px-5 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
             type="button"
@@ -336,6 +483,13 @@ onMounted(loadSubscriptions);
             @click="loadSubscriptions"
           >
             刷新列表
+          </button>
+          <button
+            class="rounded-full border border-white/10 bg-white/10 px-5 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-white/15"
+            type="button"
+            @click="handleLogout"
+          >
+            退出登录
           </button>
         </div>
       </header>
