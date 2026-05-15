@@ -11,6 +11,7 @@ import {
   isUnauthorizedError,
   loginAdmin,
   runReminderCheck,
+  sendTestEmail,
   updateSubscription,
   verifyAdminSession
 } from './api';
@@ -26,6 +27,7 @@ const submitting = ref(false);
 const deletingId = ref(null);
 const editingId = ref(null);
 const reminderRunning = ref(false);
+const testEmailSending = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 const reminderDetails = ref([]);
@@ -344,6 +346,23 @@ async function handleRunReminderCheck() {
   }
 }
 
+async function handleSendTestEmail() {
+  testEmailSending.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+  reminderDetails.value = [];
+
+  try {
+    const result = await sendTestEmail();
+    successMessage.value = result.message || '测试邮件已发送';
+  } catch (error) {
+    if (handleUnauthorized(error)) return;
+    errorMessage.value = getApiErrorMessage(error);
+  } finally {
+    testEmailSending.value = false;
+  }
+}
+
 async function handleLogin() {
   loginSubmitting.value = true;
   loginError.value = '';
@@ -476,6 +495,14 @@ onMounted(initializeApp);
             @click="handleRunReminderCheck"
           >
             {{ reminderRunning ? '提醒执行中...' : '执行到期提醒' }}
+          </button>
+          <button
+            class="rounded-full border border-cyan-300/20 bg-cyan-500/10 px-5 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-60"
+            type="button"
+            :disabled="testEmailSending"
+            @click="handleSendTestEmail"
+          >
+            {{ testEmailSending ? '发送中...' : '发送测试邮件' }}
           </button>
           <button
             class="rounded-full border border-white/10 bg-white/10 px-5 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-white/15"

@@ -21,6 +21,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TEST_TO: ${SMTP_TEST_TO:-}
     volumes:
       - backend-data:/app/data
     expose:

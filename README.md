@@ -123,6 +123,7 @@ SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
+SMTP_TEST_TO=
 ```
 
 管理登录说明：
@@ -137,7 +138,8 @@ SMTP_FROM=
 - `REMINDER_CHECK_INTERVAL_MINUTES`：后端定时扫描提醒任务的间隔，单位分钟，设为 `0` 可关闭自动扫描。
 - `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE`：SMTP 服务地址、端口和是否启用 SSL。
 - `SMTP_USER` / `SMTP_PASS`：SMTP 认证账号密码，可按邮件服务商要求填写授权码。
-- `SMTP_FROM`：发件人邮箱，例如 `noreply@example.com`。
+- `SMTP_FROM`：发件人邮箱，例如 `noreply@example.com`；不填时默认使用 `SMTP_USER`。
+- `SMTP_TEST_TO`：测试邮件收件人邮箱；不填时会优先使用 `SMTP_USER` 或 `SMTP_FROM`。
 - 未配置 SMTP 时，系统仍可保存提醒规则，也可手动执行提醒检查，但会跳过真实邮件发送。
 - Gmail 示例：`SMTP_HOST=smtp.gmail.com`、`SMTP_PORT=465`、`SMTP_SECURE=true`，`SMTP_USER` 和 `SMTP_FROM` 通常填写同一个 Gmail 地址，`SMTP_PASS` 需要填写 Google 账号的应用专用密码，不是网页登录密码。
 
@@ -168,6 +170,7 @@ SMTP_SECURE=true
 SMTP_USER=mailer@example.com
 SMTP_PASS=your_password
 SMTP_FROM=mailer@example.com
+SMTP_TEST_TO=your_test_recipient@example.com
 ```
 
 ### 3. 启动服务
@@ -193,6 +196,8 @@ curl http://localhost:9527/health
 ```bash
 curl -X POST http://localhost:9527/api/reminders/run
 ```
+
+登录管理页面后，可点击页面右上角“发送测试邮件”直接验证 SMTP 配置。测试邮件不会依赖订阅到期日期，也不会修改订阅提醒状态。
 
 查看容器状态和日志：
 

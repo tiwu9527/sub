@@ -107,6 +107,11 @@ export async function runReminderCheck() {
   return data;
 }
 
+export async function sendTestEmail() {
+  const { data } = await api.post('/reminders/test-email');
+  return data;
+}
+
 export function isUnauthorizedError(error) {
   return error.response?.status === 401;
 }

@@ -1,9 +1,13 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
+
+loadEnvFiles();
 
 const app = express();
 const prisma = new PrismaClient();
@@ -14,6 +18,7 @@ const adminUsername = String(process.env.ADMIN_USERNAME || 'admin').trim();
 const adminPassword = String(process.env.ADMIN_PASSWORD || 'admin123456');
 const authTokenSecret = String(process.env.AUTH_TOKEN_SECRET || 'sub-dev-token-secret');
 const authTokenTtlHours = Math.max(1, Number(process.env.AUTH_TOKEN_TTL_HOURS || 24));
+const smtpTestTo = String(process.env.SMTP_TEST_TO || '').trim();
 const billingCycleLabels = {
   monthly: '月付',
   quarterly: '季付',
@@ -29,6 +34,46 @@ let reminderJobRunning = false;
 
 app.use(cors({ origin: frontendOrigin }));
 app.use(express.json());
+
+function loadEnvFile(fileUrl) {
+  const envPath = fileURLToPath(fileUrl);
+
+  if (!fs.existsSync(envPath)) {
+    return {};
+  }
+
+  return dotenv.parse(fs.readFileSync(envPath));
+}
+
+function loadEnvFiles() {
+  const runtimeEnvKeys = new Set(Object.keys(process.env));
+  const rootEnv = loadEnvFile(new URL('../.env', import.meta.url));
+  const backendEnv = loadEnvFile(new URL('.env', import.meta.url));
+
+  for (const [key, value] of Object.entries(rootEnv)) {
+    if (!runtimeEnvKeys.has(key) && process.env[key] == null) {
+      process.env[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(backendEnv)) {
+    if (runtimeEnvKeys.has(key)) {
+      continue;
+    }
+
+    if (value === '' && process.env[key] != null) {
+      continue;
+    }
+
+    process.env[key] = value;
+  }
+}
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
 
 function encodeBase64Url(value) {
   return Buffer.from(value).toString('base64url');
@@ -124,9 +169,9 @@ function requireAuth(req, res, next) {
 function createReminderMailer() {
   const host = String(process.env.SMTP_HOST || '').trim();
   const portValue = Number(process.env.SMTP_PORT || 0);
-  const from = String(process.env.SMTP_FROM || '').trim();
   const user = String(process.env.SMTP_USER || '').trim();
   const pass = String(process.env.SMTP_PASS || '').trim();
+  const from = String(process.env.SMTP_FROM || user).trim();
   const secure = String(process.env.SMTP_SECURE || 'false').trim().toLowerCase() === 'true';
   const authRequired = Boolean(user || pass || isKnownAuthRequiredSmtpHost(host));
   const missing = [];
@@ -183,6 +228,44 @@ function getSmtpErrorMessage(error) {
   }
 
   return response ? `邮件发送失败：${response.slice(0, 300)}` : '邮件发送失败';
+}
+
+async function sendSmtpTestEmail(to) {
+  if (!reminderMailer.transporter) {
+    throw createHttpError(400, reminderMailer.disabledReason || '未配置 SMTP，无法发送测试邮件');
+  }
+
+  const recipient = String(to || smtpTestTo || process.env.SMTP_USER || reminderMailer.from || '').trim();
+
+  if (!isValidEmail(recipient)) {
+    throw createHttpError(400, '测试收件人邮箱无效，请配置 SMTP_TEST_TO 或在请求中传入有效的 to');
+  }
+
+  const message = {
+    from: reminderMailer.from,
+    to: recipient,
+    subject: '[sub] SMTP 测试邮件',
+    text: '这是一封来自 sub 订阅管理面板的 SMTP 测试邮件。收到此邮件说明邮件发送配置可用。',
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.7;">
+        <h2 style="margin-bottom: 12px;">SMTP 测试邮件</h2>
+        <p>这是一封来自 sub 订阅管理面板的 SMTP 测试邮件。</p>
+        <p>收到此邮件说明邮件发送配置可用。</p>
+      </div>
+    `
+  };
+
+  try {
+    await reminderMailer.transporter.verify();
+    await reminderMailer.transporter.sendMail(message);
+  } catch (error) {
+    throw createHttpError(502, getSmtpErrorMessage(error));
+  }
+
+  return {
+    to: recipient,
+    message: `测试邮件已发送到 ${recipient}`
+  };
 }
 
 function getSubscriptionInclude() {
@@ -618,6 +701,15 @@ app.post('/api/reminders/run', async (req, res, next) => {
   }
 });
 
+app.post('/api/reminders/test-email', async (req, res, next) => {
+  try {
+    const result = await sendSmtpTestEmail(req.body?.to);
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.delete('/api/subscriptions/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -643,7 +735,9 @@ app.use((req, res) => {
 
 app.use((error, req, res, next) => {
   console.error(error);
-  res.status(500).json({ message: '服务器内部错误，请稍后重试' });
+  const statusCode = Number(error.statusCode || 500);
+  const message = statusCode >= 500 && !error.statusCode ? '服务器内部错误，请稍后重试' : error.message;
+  res.status(statusCode).json({ message });
 });
 
 function startReminderScheduler() {
