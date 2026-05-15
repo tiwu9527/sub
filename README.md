@@ -127,6 +127,7 @@ SMTP_FROM=
 - `SMTP_USER` / `SMTP_PASS`：SMTP 认证账号密码，可按邮件服务商要求填写授权码。
 - `SMTP_FROM`：发件人邮箱，例如 `noreply@example.com`。
 - 未配置 SMTP 时，系统仍可保存提醒规则，也可手动执行提醒检查，但会跳过真实邮件发送。
+- Gmail 示例：`SMTP_HOST=smtp.gmail.com`、`SMTP_PORT=465`、`SMTP_SECURE=true`，`SMTP_USER` 和 `SMTP_FROM` 通常填写同一个 Gmail 地址，`SMTP_PASS` 需要填写 Google 账号的应用专用密码，不是网页登录密码。
 
 如果直接通过服务器 IP 访问，把 `FRONTEND_ORIGIN` 改成实际访问地址：
 

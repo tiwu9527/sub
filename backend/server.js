@@ -17,7 +17,7 @@ const billingCycleLabels = {
 const allowedBillingCycles = new Set(Object.keys(billingCycleLabels));
 const reminderCheckIntervalMinutes = Math.max(0, Number(process.env.REMINDER_CHECK_INTERVAL_MINUTES || 60));
 const oneDayMs = 24 * 60 * 60 * 1000;
-const reminderTransporter = createReminderTransporter();
+const reminderMailer = createReminderMailer();
 
 let reminderJobTimer = null;
 let reminderJobRunning = false;
@@ -25,25 +25,68 @@ let reminderJobRunning = false;
 app.use(cors({ origin: frontendOrigin }));
 app.use(express.json());
 
-function createReminderTransporter() {
+function createReminderMailer() {
   const host = String(process.env.SMTP_HOST || '').trim();
   const portValue = Number(process.env.SMTP_PORT || 0);
   const from = String(process.env.SMTP_FROM || '').trim();
-
-  if (!host || !Number.isInteger(portValue) || portValue <= 0 || !from) {
-    return null;
-  }
-
   const user = String(process.env.SMTP_USER || '').trim();
   const pass = String(process.env.SMTP_PASS || '').trim();
   const secure = String(process.env.SMTP_SECURE || 'false').trim().toLowerCase() === 'true';
+  const authRequired = Boolean(user || pass || isKnownAuthRequiredSmtpHost(host));
+  const missing = [];
 
-  return nodemailer.createTransport({
-    host,
-    port: portValue,
-    secure,
-    auth: user ? { user, pass } : undefined
-  });
+  if (!host) missing.push('SMTP_HOST');
+  if (!Number.isInteger(portValue) || portValue <= 0) missing.push('SMTP_PORT');
+  if (!from) missing.push('SMTP_FROM');
+  if (authRequired && !user) missing.push('SMTP_USER');
+  if (authRequired && !pass) missing.push('SMTP_PASS');
+
+  if (missing.length > 0) {
+    return {
+      transporter: null,
+      from,
+      disabledReason: `SMTP 配置不完整，缺少 ${[...new Set(missing)].join('、')}，已跳过邮件发送`
+    };
+  }
+
+  return {
+    transporter: nodemailer.createTransport({
+      host,
+      port: portValue,
+      secure,
+      auth: authRequired ? { user, pass } : undefined
+    }),
+    from,
+    disabledReason: null
+  };
+}
+
+function isKnownAuthRequiredSmtpHost(host) {
+  return /(^|\.)((gmail|qq|163|126)\.com|office365\.com|outlook\.com)$/i.test(host);
+}
+
+function getSmtpErrorMessage(error) {
+  const responseCode = Number(error?.responseCode || 0);
+  const code = String(error?.code || '').trim();
+  const response = String(error?.response || error?.message || '').replace(/\s+/g, ' ').trim();
+
+  if (code === 'EAUTH' || responseCode === 535 || /Invalid login|Username and Password not accepted|authentication failed/i.test(response)) {
+    return 'SMTP 认证失败，请检查 SMTP_USER / SMTP_PASS；Gmail 需要使用应用专用密码，不能使用网页登录密码';
+  }
+
+  if (responseCode === 530 || /Authentication Required/i.test(response)) {
+    return 'SMTP 服务要求认证，请配置 SMTP_USER / SMTP_PASS';
+  }
+
+  if (['ECONNECTION', 'ESOCKET', 'ETIMEDOUT'].includes(code)) {
+    return '无法连接 SMTP 服务，请检查 SMTP_HOST、SMTP_PORT、SMTP_SECURE 和服务器网络';
+  }
+
+  if ([550, 553].includes(responseCode)) {
+    return 'SMTP 拒绝发件人或收件人地址，请检查 SMTP_FROM 和使用人员邮箱';
+  }
+
+  return response ? `邮件发送失败：${response.slice(0, 300)}` : '邮件发送失败';
 }
 
 function getSubscriptionInclude() {
@@ -196,7 +239,7 @@ function buildReminderEmail(subscription) {
   return {
     recipients,
     message: {
-      from: process.env.SMTP_FROM,
+      from: reminderMailer.from,
       subject,
       text,
       html
@@ -205,10 +248,10 @@ function buildReminderEmail(subscription) {
 }
 
 async function sendReminderEmails(subscription) {
-  if (!reminderTransporter) {
+  if (!reminderMailer.transporter) {
     return {
       sentCount: 0,
-      skipped: '未配置 SMTP，已跳过邮件发送'
+      skipped: reminderMailer.disabledReason || '未配置 SMTP，已跳过邮件发送'
     };
   }
 
@@ -224,10 +267,15 @@ async function sendReminderEmails(subscription) {
   let sentCount = 0;
 
   for (const recipient of recipients) {
-    await reminderTransporter.sendMail({
-      ...message,
-      to: recipient
-    });
+    try {
+      await reminderMailer.transporter.sendMail({
+        ...message,
+        to: recipient
+      });
+    } catch (error) {
+      throw new Error(`发送到 ${recipient} 失败：${getSmtpErrorMessage(error)}`);
+    }
+
     sentCount += 1;
   }
 

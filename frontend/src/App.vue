@@ -17,6 +17,7 @@ const editingId = ref(null);
 const reminderRunning = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+const reminderDetails = ref([]);
 
 function createEmptyUser() {
   return {
@@ -144,6 +145,12 @@ function formatReminderStatus(subscription) {
   return `提前 ${subscription.reminderDays} 天提醒`;
 }
 
+function getReminderDetailClass(status) {
+  if (status === 'sent') return 'border-emerald-300/20 bg-emerald-500/10 text-emerald-100';
+  if (status === 'error') return 'border-red-300/20 bg-red-500/10 text-red-100';
+  return 'border-amber-300/20 bg-amber-500/10 text-amber-100';
+}
+
 function setUsers(users = []) {
   const nextUsers = users.length > 0 ? users : [createEmptyUser()];
   form.users.splice(
@@ -229,6 +236,7 @@ async function handleSubmit() {
   submitting.value = true;
   errorMessage.value = '';
   successMessage.value = '';
+  reminderDetails.value = [];
 
   try {
     if (isEditing.value) {
@@ -255,6 +263,7 @@ async function handleDelete(subscription) {
   deletingId.value = subscription.id;
   errorMessage.value = '';
   successMessage.value = '';
+  reminderDetails.value = [];
 
   try {
     await deleteSubscription(subscription.id);
@@ -276,10 +285,17 @@ async function handleRunReminderCheck() {
   reminderRunning.value = true;
   errorMessage.value = '';
   successMessage.value = '';
+  reminderDetails.value = [];
 
   try {
     const result = await runReminderCheck();
-    successMessage.value = result.message;
+    if (result.errorCount > 0) {
+      errorMessage.value = result.message;
+    } else {
+      successMessage.value = result.message;
+    }
+
+    reminderDetails.value = Array.isArray(result.details) ? result.details : [];
     await loadSubscriptions();
   } catch (error) {
     errorMessage.value = getApiErrorMessage(error);
@@ -352,6 +368,19 @@ onMounted(loadSubscriptions);
       </div>
       <div v-if="successMessage" class="mb-5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
         {{ successMessage }}
+      </div>
+      <div v-if="reminderDetails.length > 0" class="mb-5 grid gap-2">
+        <div
+          v-for="detail in reminderDetails"
+          :key="`${detail.id}-${detail.dueDate}`"
+          :class="getReminderDetailClass(detail.status)"
+          class="rounded-2xl border px-4 py-3 text-sm"
+        >
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <span class="font-semibold">{{ detail.platform }} · {{ detail.dueDate }}</span>
+            <span>{{ detail.message }}</span>
+          </div>
+        </div>
       </div>
 
       <div class="grid gap-6 lg:grid-cols-[420px_1fr]">
