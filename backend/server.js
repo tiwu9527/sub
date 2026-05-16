@@ -384,7 +384,6 @@ function buildReminderEmail(subscription) {
   const cycleText = getBillingCycleLabel(subscription.billingCycle);
   const recipients = [...new Set(subscription.users.map((user) => user.email).filter(Boolean))];
   const subject = `[订阅到期提醒] ${subscription.platform} 将于 ${dueDateText} 到期`;
-  const userList = subscription.users.map((user) => user.name).join('、') || '未填写';
   const reminderWindowText = subscription.reminderDays === 0 ? '到期当天提醒' : `提前 ${subscription.reminderDays} 天提醒`;
 
   const text = [
@@ -396,7 +395,6 @@ function buildReminderEmail(subscription) {
     `周期：${cycleText}`,
     `到期日：${dueDateText}`,
     `提醒规则：${reminderWindowText}`,
-    `使用人员：${userList}`,
     '',
     '请及时确认是否续费。'
   ].join('\n');
@@ -410,7 +408,6 @@ function buildReminderEmail(subscription) {
       <p><strong>周期：</strong>${cycleText}</p>
       <p><strong>到期日：</strong>${dueDateText}</p>
       <p><strong>提醒规则：</strong>${reminderWindowText}</p>
-      <p><strong>使用人员：</strong>${userList}</p>
       <p>请及时确认是否续费。</p>
     </div>
   `;

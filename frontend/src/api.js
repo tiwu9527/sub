@@ -3,6 +3,7 @@ import axios from 'axios';
 const AUTH_TOKEN_STORAGE_KEY = 'sub.admin.authToken';
 const AUTH_USERNAME_STORAGE_KEY = 'sub.admin.username';
 const AUTH_EXPIRES_AT_STORAGE_KEY = 'sub.admin.expiresAt';
+const EMAIL_REQUEST_TIMEOUT_MS = 60000;
 
 let authToken = getStoredAuthToken();
 
@@ -108,7 +109,9 @@ export async function runReminderCheck() {
 }
 
 export async function sendTestEmail() {
-  const { data } = await api.post('/reminders/test-email');
+  const { data } = await api.post('/reminders/test-email', undefined, {
+    timeout: EMAIL_REQUEST_TIMEOUT_MS
+  });
   return data;
 }
 
