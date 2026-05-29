@@ -34,3 +34,10 @@ model SubscriptionUser {
 
   @@index([subscriptionId])
 }
+
+model AppSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

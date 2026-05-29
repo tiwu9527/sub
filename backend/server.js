@@ -19,6 +19,8 @@ const adminPassword = String(process.env.ADMIN_PASSWORD || 'admin123456');
 const authTokenSecret = String(process.env.AUTH_TOKEN_SECRET || 'sub-dev-token-secret');
 const authTokenTtlHours = Math.max(1, Number(process.env.AUTH_TOKEN_TTL_HOURS || 24));
 const smtpTestTo = String(process.env.SMTP_TEST_TO || '').trim();
+const defaultBrandName = '订阅管家';
+const brandNameSettingKey = 'brandName';
 const billingCycleLabels = {
   monthly: '月付',
   quarterly: '季付',
@@ -73,6 +75,10 @@ function createHttpError(statusCode, message) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function normalizeBrandName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
 function encodeBase64Url(value) {
@@ -163,6 +169,20 @@ function requireAuth(req, res, next) {
   }
 
   req.adminSession = session;
+  return next();
+}
+
+function optionalAuth(req, res, next) {
+  const [scheme, token] = String(req.headers.authorization || '').split(' ');
+
+  if (scheme === 'Bearer') {
+    const session = verifyAuthToken(token);
+
+    if (session) {
+      req.adminSession = session;
+    }
+  }
+
   return next();
 }
 
@@ -566,8 +586,43 @@ function toSubscriptionResponseInclude() {
   };
 }
 
+function toPublicSubscription(subscription) {
+  return {
+    ...subscription,
+    lastReminderSentAt: null,
+    lastReminderTargetDate: null,
+    users: subscription.users.map((user) => ({
+      id: user.id,
+      subscriptionId: user.subscriptionId,
+      name: user.name,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    }))
+  };
+}
+
+async function getAppSettings() {
+  const settings = await prisma.$queryRaw`
+    SELECT "value" FROM "AppSetting" WHERE "key" = ${brandNameSettingKey} LIMIT 1
+  `;
+  const setting = Array.isArray(settings) ? settings[0] : null;
+
+  return {
+    brandName: setting?.value || defaultBrandName
+  };
+}
+
 app.get('/health', (req, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/settings', async (req, res, next) => {
+  try {
+    const settings = await getAppSettings();
+    return res.json(settings);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -585,17 +640,42 @@ app.get('/api/auth/session', requireAuth, (req, res) => {
   res.json(req.adminSession);
 });
 
-app.use('/api/subscriptions', requireAuth);
 app.use('/api/reminders', requireAuth);
 
-app.get('/api/subscriptions', async (req, res, next) => {
+app.put('/api/settings', requireAuth, async (req, res, next) => {
+  try {
+    const brandName = normalizeBrandName(req.body?.brandName);
+    const errors = [];
+
+    if (!brandName) errors.push('品牌名称不能为空');
+    if (brandName.length > 24) errors.push('品牌名称不能超过 24 个字符');
+
+    if (errors.length > 0) {
+      return res.status(400).json({ message: '请求数据校验失败', errors });
+    }
+
+    await prisma.$executeRaw`
+      INSERT INTO "AppSetting" ("key", "value", "createdAt", "updatedAt")
+      VALUES (${brandNameSettingKey}, ${brandName}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT("key") DO UPDATE SET
+        "value" = excluded."value",
+        "updatedAt" = CURRENT_TIMESTAMP
+    `;
+
+    return res.json(await getAppSettings());
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/subscriptions', optionalAuth, async (req, res, next) => {
   try {
     const subscriptions = await prisma.subscription.findMany({
       ...toSubscriptionResponseInclude(),
       orderBy: { nextBillingDate: 'asc' }
     });
 
-    res.json(subscriptions);
+    res.json(req.adminSession ? subscriptions : subscriptions.map(toPublicSubscription));
   } catch (error) {
     next(error);
   }
@@ -615,7 +695,7 @@ app.get('/api/subscriptions/summary', async (req, res, next) => {
   }
 });
 
-app.post('/api/subscriptions', async (req, res, next) => {
+app.post('/api/subscriptions', requireAuth, async (req, res, next) => {
   try {
     const { errors, data } = parseSubscriptionPayload(req.body);
 
@@ -645,7 +725,7 @@ app.post('/api/subscriptions', async (req, res, next) => {
   }
 });
 
-app.put('/api/subscriptions/:id', async (req, res, next) => {
+app.put('/api/subscriptions/:id', requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
 
@@ -707,7 +787,7 @@ app.post('/api/reminders/test-email', async (req, res, next) => {
   }
 });
 
-app.delete('/api/subscriptions/:id', async (req, res, next) => {
+app.delete('/api/subscriptions/:id', requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
 

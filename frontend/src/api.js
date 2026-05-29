@@ -13,7 +13,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  if (authToken) {
+  if (authToken && !config.skipAuth) {
     config.headers.Authorization = `Bearer ${authToken}`;
   }
 
@@ -84,8 +84,22 @@ export async function verifyAdminSession() {
   return data;
 }
 
-export async function fetchSubscriptions() {
-  const { data } = await api.get('/subscriptions');
+export async function fetchSubscriptions(options = {}) {
+  const { data } = await api.get('/subscriptions', {
+    skipAuth: options.publicOnly === true
+  });
+  return data;
+}
+
+export async function fetchSettings(options = {}) {
+  const { data } = await api.get('/settings', {
+    skipAuth: options.publicOnly === true
+  });
+  return data;
+}
+
+export async function updateSettings(payload) {
+  const { data } = await api.put('/settings', payload);
   return data;
 }
 
