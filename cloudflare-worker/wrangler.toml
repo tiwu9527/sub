@@ -1,0 +1,25 @@
+name = "sub-cloudflare-worker"
+main = "src/worker.js"
+compatibility_date = "2026-06-13"
+
+[assets]
+directory = "../frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sub-db"
+database_id = "replace-with-your-d1-database-id"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+FRONTEND_ORIGIN = "http://localhost:8787"
+ADMIN_USERNAME = "admin"
+AUTH_TOKEN_TTL_HOURS = "24"
+BRAND_NAME = "Subscription Desk"
+EMAIL_PROVIDER = ""
+EMAIL_FROM = ""
+EMAIL_TEST_TO = ""
