@@ -1,53 +1,15 @@
-name: sub
-
 services:
-  api:
+  next-dashboard:
     build:
-      context: ./backend
+      context: ./next-dashboard
+      dockerfile: Dockerfile
+    image: subscription-manager-dashboard:latest
+    container_name: subscription-manager-dashboard
     restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3100}:3100"
     environment:
       NODE_ENV: production
-      PORT: 3001
-      DATABASE_URL: ${DATABASE_URL:-file:/app/data/prod.db}
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:9527}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
-      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-change_this_to_a_long_random_secret}
-      AUTH_TOKEN_TTL_HOURS: ${AUTH_TOKEN_TTL_HOURS:-24}
-      REMINDER_CHECK_INTERVAL_MINUTES: ${REMINDER_CHECK_INTERVAL_MINUTES:-60}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      SMTP_TEST_TO: ${SMTP_TEST_TO:-}
-    volumes:
-      - backend-data:/app/data
-    expose:
-      - "3001"
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:3001/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
-      interval: 30s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
-
-  web:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_BASE_URL: /api
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "${WEB_PORT:-9527}:80"
-
-volumes:
-  backend-data:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3100"
+      HOSTNAME: "0.0.0.0"
