@@ -64,11 +64,6 @@ type OverviewStatItem = {
   targetQuery?: string;
 };
 
-const adminAccount = {
-  username: 'admin',
-  password: 'admin123'
-};
-
 const authStorageKey = 'subscription-dashboard-admin-session';
 const subscriptionStorageKey = 'subscription-dashboard-items';
 
@@ -383,7 +378,8 @@ export default function DashboardPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [loginForm, setLoginForm] = useState<LoginForm>({ username: adminAccount.username, password: '' });
+  const [isLoginPending, setIsLoginPending] = useState(false);
+  const [loginForm, setLoginForm] = useState<LoginForm>({ username: '', password: '' });
   const [form, setForm] = useState<NewSubscriptionForm>(emptyForm);
   const [config, setConfig] = useState<WorkspaceConfig>(defaultConfig);
   const [configForm, setConfigForm] = useState<WorkspaceConfig>(defaultConfig);
@@ -517,22 +513,41 @@ export default function DashboardPage() {
     setLoginOpen(false);
   }
 
-  function handleLogin(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (loginForm.username.trim() !== adminAccount.username || loginForm.password !== adminAccount.password) {
-      setLoginError('账号或密码不正确');
-      return;
-    }
-
-    const action = pendingAdminAction.current;
-    pendingAdminAction.current = null;
-    window.localStorage.setItem(authStorageKey, 'true');
-    setIsAdmin(true);
-    setLoginOpen(false);
     setLoginError('');
-    setLoginForm({ username: adminAccount.username, password: '' });
-    action?.();
+    setIsLoginPending(true);
+
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: loginForm.username.trim(),
+          password: loginForm.password
+        })
+      });
+
+      if (!response.ok) {
+        setLoginError('账号或密码不正确');
+        return;
+      }
+
+      const action = pendingAdminAction.current;
+      pendingAdminAction.current = null;
+      window.localStorage.setItem(authStorageKey, 'true');
+      setIsAdmin(true);
+      setLoginOpen(false);
+      setLoginForm({ username: '', password: '' });
+      action?.();
+    } catch {
+      setLoginError('登录服务暂时不可用');
+    } finally {
+      setIsLoginPending(false);
+    }
   }
 
   function handleLogout() {
@@ -1108,7 +1123,7 @@ export default function DashboardPage() {
 
             <p className="mt-4 text-sm leading-6 text-muted">登录后可以添加订阅、编辑订阅和修改配置。</p>
             <div className="theme-inset mt-3 rounded-[16px] bg-[#F7F7FC] px-3 py-2 text-xs font-semibold text-muted">
-              默认账号：admin / 密码：admin123
+              管理员账号与密码由部署环境变量配置
             </div>
 
             <div className="mt-5 grid gap-4">
@@ -1122,7 +1137,7 @@ export default function DashboardPage() {
                 label="密码"
                 value={loginForm.password}
                 onChange={(value) => setLoginForm((current) => ({ ...current, password: value }))}
-                placeholder="admin123"
+                placeholder="请输入密码"
                 type="password"
               />
             </div>
@@ -1131,10 +1146,11 @@ export default function DashboardPage() {
 
             <button
               type="submit"
+              disabled={isLoginPending}
               className="theme-primary-action mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-primary px-4 text-sm font-semibold text-white shadow-[0_18px_38px_rgba(124,92,255,.26)]"
             >
               <LockKeyhole size={17} />
-              登录
+              {isLoginPending ? '登录中' : '登录'}
             </button>
           </form>
         </div>

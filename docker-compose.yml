@@ -13,3 +13,5 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       PORT: "3100"
       HOSTNAME: "0.0.0.0"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
