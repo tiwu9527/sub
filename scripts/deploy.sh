@@ -4,6 +4,16 @@ set -eu
 APP_PORT="${APP_PORT:-3100}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+ADMIN_SESSION_SECRET="${ADMIN_SESSION_SECRET:-}"
+ADMIN_COOKIE_SECURE="${ADMIN_COOKIE_SECURE:-false}"
+APP_TIME_ZONE="${APP_TIME_ZONE:-Asia/Shanghai}"
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_SECURE="${SMTP_SECURE:-false}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+MAIL_FROM="${MAIL_FROM:-}"
+MAIL_REPLY_TO="${MAIL_REPLY_TO:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 
 usage() {
@@ -19,6 +29,9 @@ Options:
 
 Environment variables are also supported:
   APP_PORT=8080 ADMIN_USERNAME=admin ADMIN_PASSWORD='secret' ./scripts/deploy.sh
+
+Email reminders additionally use:
+  SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS MAIL_FROM MAIL_REPLY_TO
 EOF
 }
 
@@ -82,6 +95,24 @@ if [ -z "$ADMIN_PASSWORD" ]; then
   printf "\n"
 fi
 
+if [ -z "$ADMIN_SESSION_SECRET" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    ADMIN_SESSION_SECRET="$(openssl rand -hex 32)"
+  elif [ -r /dev/urandom ] && command -v od >/dev/null 2>&1; then
+    ADMIN_SESSION_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  else
+    echo "Unable to generate ADMIN_SESSION_SECRET. Set it manually." >&2
+    exit 1
+  fi
+fi
+
+case "$SMTP_PORT" in
+  ''|*[!0-9]*)
+    echo "SMTP_PORT must be a number." >&2
+    exit 1
+    ;;
+esac
+
 if [ -z "$ADMIN_PASSWORD" ]; then
   echo "ADMIN_PASSWORD cannot be empty." >&2
   exit 1
@@ -93,6 +124,16 @@ cat > .env <<EOF
 APP_PORT='$APP_PORT'
 ADMIN_USERNAME='$(quote_env_value "$ADMIN_USERNAME")'
 ADMIN_PASSWORD='$(quote_env_value "$ADMIN_PASSWORD")'
+ADMIN_SESSION_SECRET='$(quote_env_value "$ADMIN_SESSION_SECRET")'
+ADMIN_COOKIE_SECURE='$(quote_env_value "$ADMIN_COOKIE_SECURE")'
+APP_TIME_ZONE='$(quote_env_value "$APP_TIME_ZONE")'
+SMTP_HOST='$(quote_env_value "$SMTP_HOST")'
+SMTP_PORT='$(quote_env_value "$SMTP_PORT")'
+SMTP_SECURE='$(quote_env_value "$SMTP_SECURE")'
+SMTP_USER='$(quote_env_value "$SMTP_USER")'
+SMTP_PASS='$(quote_env_value "$SMTP_PASS")'
+MAIL_FROM='$(quote_env_value "$MAIL_FROM")'
+MAIL_REPLY_TO='$(quote_env_value "$MAIL_REPLY_TO")'
 EOF
 
 if docker compose version >/dev/null 2>&1; then

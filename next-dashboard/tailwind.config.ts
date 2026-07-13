@@ -9,26 +9,26 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        canvas: '#F7F7FC',
+        canvas: '#F4F6F5',
         card: '#FFFFFF',
-        primary: '#7C5CFF',
-        secondary: '#A98BFF',
-        accent: '#6E4BFF',
-        danger: '#FF5A5F',
-        success: '#34C759',
-        ink: '#111827',
-        muted: '#6B7280'
+        primary: '#0F766E',
+        secondary: '#2563EB',
+        accent: '#0B5F59',
+        danger: '#D95757',
+        success: '#16845B',
+        ink: '#17211B',
+        muted: '#68746D'
       },
       fontFamily: {
         sans: ['Inter', 'PingFang SC', 'ui-sans-serif', 'system-ui', 'sans-serif']
       },
       boxShadow: {
-        glow: '0 10px 40px rgba(124,92,255,.08)',
-        lift: '0 24px 70px rgba(124,92,255,.16)',
-        soft: '0 16px 50px rgba(17,24,39,.08)'
+        glow: '0 1px 2px rgba(23,33,27,.04)',
+        lift: '0 12px 32px rgba(23,33,27,.10)',
+        soft: '0 6px 18px rgba(23,33,27,.08)'
       },
       borderRadius: {
-        '4xl': '28px'
+        '4xl': '8px'
       }
     }
   },

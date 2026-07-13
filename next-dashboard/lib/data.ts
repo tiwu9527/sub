@@ -91,10 +91,10 @@ export const subscriptions: Subscription[] = [
     tag: 'Entertainment',
     price: '¥21.00',
     cycle: '季付',
-    nextBilling: '2026-05-18',
+    nextBilling: '2026-08-18',
     members: '1 人',
     memberEmails: ['alex@example.com'],
-    memberDetails: [{ id: 'apple-one-alex', name: 'Alex', email: 'alex@example.com', expiresAt: '2026-05-18' }],
+    memberDetails: [{ id: 'apple-one-alex', name: 'Alex', email: 'alex@example.com', expiresAt: '2026-08-18' }],
     status: 'active',
     icon: Cloud,
     tone: 'from-[#7C5CFF] via-[#9275FF] to-[#C8B8FF]'
@@ -106,12 +106,12 @@ export const subscriptions: Subscription[] = [
     tag: 'Video',
     price: '¥68.00',
     cycle: '月付',
-    nextBilling: '2026-07-02',
+    nextBilling: '2026-07-14',
     members: '4 人',
     memberEmails: ['mia@example.com', 'lin@example.com'],
     memberDetails: [
-      { id: 'netflix-mia', name: 'Mia', email: 'mia@example.com', expiresAt: '2026-07-02' },
-      { id: 'netflix-lin', name: 'Lin', email: 'lin@example.com', expiresAt: '2026-07-02' }
+      { id: 'netflix-mia', name: 'Mia', email: 'mia@example.com', expiresAt: '2026-07-14' },
+      { id: 'netflix-lin', name: 'Lin', email: 'lin@example.com', expiresAt: '2026-07-14' }
     ],
     status: 'due',
     icon: Film,
@@ -124,12 +124,12 @@ export const subscriptions: Subscription[] = [
     tag: 'Music',
     price: '¥18.00',
     cycle: '月付',
-    nextBilling: '2026-07-08',
+    nextBilling: '2026-08-08',
     members: '5 人',
     memberEmails: ['kai@example.com', 'you@example.com'],
     memberDetails: [
-      { id: 'spotify-kai', name: 'Kai', email: 'kai@example.com', expiresAt: '2026-07-08' },
-      { id: 'spotify-you', name: 'You', email: 'you@example.com', expiresAt: '2026-07-08' }
+      { id: 'spotify-kai', name: 'Kai', email: 'kai@example.com', expiresAt: '2026-08-08' },
+      { id: 'spotify-you', name: 'You', email: 'you@example.com', expiresAt: '2026-08-08' }
     ],
     status: 'active',
     icon: Music2,
@@ -138,12 +138,12 @@ export const subscriptions: Subscription[] = [
 ];
 
 export const trendPoints = [
-  { month: 'Jan', value: 42 },
-  { month: 'Feb', value: 56 },
-  { month: 'Mar', value: 49 },
-  { month: 'Apr', value: 71 },
-  { month: 'May', value: 64 },
-  { month: 'Jun', value: 78 }
+  { month: 'Feb', value: 42 },
+  { month: 'Mar', value: 56 },
+  { month: 'Apr', value: 49 },
+  { month: 'May', value: 71 },
+  { month: 'Jun', value: 64 },
+  { month: 'Jul', value: 78 }
 ];
 
 export const sidebarItems = [

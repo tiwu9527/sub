@@ -1,12 +1,20 @@
 'use client';
 
-import * as motion from 'framer-motion/client';
-import { ArrowUpRight, CalendarClock, Gauge, TrendingUp } from 'lucide-react';
+import { CalendarClock, Gauge, Settings2, TrendingUp, UsersRound } from 'lucide-react';
 import { calculateMonthlySpend } from '@/lib/billing';
-import { quickPanelMembers, trendPoints } from '@/lib/data';
+import { trendPoints } from '@/lib/data';
 import type { Subscription } from '@/lib/data';
 
 type PanelIcon = typeof CalendarClock;
+
+function getClosestSubscription(subscriptions: Subscription[]) {
+  const now = Date.now();
+
+  return subscriptions
+    .filter((subscription) => subscription.status !== 'paused')
+    .map((subscription) => ({ subscription, distance: Math.abs(new Date(`${subscription.nextBilling}T00:00:00`).getTime() - now) }))
+    .sort((first, second) => first.distance - second.distance)[0]?.subscription;
+}
 
 export function QuickPanel({
   config,
@@ -24,68 +32,94 @@ export function QuickPanel({
   const maxValue = Math.max(...trendPoints.map((point) => point.value));
   const budget = Number(config.monthlyBudget) || 40;
   const currentSpend = calculateMonthlySpend(subscriptions);
-  const budgetProgress = Math.min(100, Math.round((currentSpend / budget) * 100));
+  const budgetPercent = Math.round((currentSpend / budget) * 100);
+  const budgetProgress = Math.min(100, budgetPercent);
+  const budgetHealthy = budgetPercent <= 100;
+  const closestSubscription = getClosestSubscription(subscriptions);
 
   return (
-    <aside className="min-w-0 space-y-5">
-      <PanelShell delay={0}>
-        <PanelHeader icon={CalendarClock} title="最近扣费" onOpenSettings={onOpenSettings} />
-        <div className="theme-accent-panel mt-5 rounded-[22px] bg-gradient-to-br from-[#F3EFFF] to-white p-4">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-ink">Apple One</div>
-              <div className="mt-1 truncate text-xs font-medium text-muted">2026-05-18 · 季付</div>
-            </div>
-            <div className="shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">已同步</div>
-          </div>
-          <div className="mt-5 text-[32px] font-semibold tracking-[-0.045em] text-ink">¥21.00</div>
-          <div className="mt-4 flex -space-x-2">
-            {quickPanelMembers.map((member) => (
-              <div
-                key={member.name}
-                title={member.name}
-                className={`grid h-8 w-8 place-items-center rounded-full border-2 border-white/80 text-[10px] font-semibold text-white ${member.color}`}
-              >
-                {member.name.slice(0, 1)}
+    <aside className="quick-panel min-w-0 space-y-4">
+      <PanelShell>
+        <PanelHeader icon={CalendarClock} title="最近账单" onOpenSettings={onOpenSettings} />
+        {closestSubscription ? (
+          <div className="mt-5">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br ${closestSubscription.tone} text-white`}>
+                  <closestSubscription.icon size={19} />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold text-ink">{closestSubscription.name}</div>
+                  <div className="mt-1 truncate text-xs text-muted">{closestSubscription.nextBilling} · {closestSubscription.cycle}</div>
+                </div>
               </div>
-            ))}
+              <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${closestSubscription.status === 'due' ? 'bg-[#FDF0E5] text-[#B96220]' : 'bg-[#E8F4EC] text-success'}`}>
+                {closestSubscription.status === 'due' ? '待确认' : '已同步'}
+              </span>
+            </div>
+            <div className="mt-5 border-y border-[#E7ECE9] py-4">
+              <div className="text-xs font-medium text-muted">本期金额</div>
+              <div className="mt-1 text-[30px] font-bold leading-none text-ink">{closestSubscription.price}</div>
+            </div>
+            <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted">
+                <UsersRound size={15} className="shrink-0" />
+                <span className="truncate">{closestSubscription.members}共同使用</span>
+              </div>
+              <div className="flex -space-x-1.5">
+                {closestSubscription.memberDetails.slice(0, 4).map((member, index) => (
+                  <div
+                    key={member.id}
+                    title={member.name}
+                    className={`grid h-7 w-7 place-items-center rounded-full border-2 border-white text-[10px] font-bold text-white ${
+                      ['bg-[#0F766E]', 'bg-[#2563EB]', 'bg-[#B96220]', 'bg-[#68746D]'][index % 4]
+                    }`}
+                  >
+                    {member.name.slice(0, 1).toUpperCase()}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-5 text-sm text-muted">暂无活跃账单</div>
+        )}
       </PanelShell>
 
-      <PanelShell delay={0.08}>
-        <PanelHeader icon={Gauge} title="预算完成度" onOpenSettings={onOpenSettings} />
+      <PanelShell>
+        <PanelHeader icon={Gauge} title="预算使用" onOpenSettings={onOpenSettings} />
         <div className="mt-5">
-          <div className="flex items-end justify-between">
-            <div className="text-[38px] font-semibold leading-none tracking-[-0.055em] text-ink">{budgetProgress}%</div>
-            <div className="rounded-full bg-success/10 px-3 py-1.5 text-xs font-semibold text-success">健康</div>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <div className="text-[32px] font-bold leading-none text-ink">{budgetPercent}%</div>
+              <div className="mt-2 text-xs font-medium text-muted">已使用 {config.currency}{currentSpend.toFixed(2)}</div>
+            </div>
+            <div className={`rounded-full px-2.5 py-1 text-xs font-semibold ${budgetHealthy ? 'bg-[#E8F4EC] text-success' : 'bg-[#FCEBEC] text-danger'}`}>
+              {budgetHealthy ? '预算健康' : '超出预算'}
+            </div>
           </div>
-          <div className="theme-track mt-5 h-3 overflow-hidden rounded-full bg-[#EFEAFD]">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${budgetProgress}%` }}
-              transition={{ delay: 0.25, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-              className="h-full rounded-full bg-gradient-to-r from-primary to-secondary shadow-[0_0_18px_rgba(124,92,255,.45)]"
+          <div className="theme-track mt-5 h-2 overflow-hidden rounded-full bg-[#E9EEEB]">
+            <div
+              style={{ width: `${budgetProgress}%` }}
+              className={`h-full rounded-full transition-[width] duration-700 ${budgetHealthy ? 'bg-primary' : 'bg-danger'}`}
             />
           </div>
-          <div className="mt-3 text-xs font-medium text-muted">
-            月预算 {config.currency}
-            {budget}，当前预计 {config.currency}
-            {currentSpend}，提前 {config.reminderDays} 天提醒
+          <div className="mt-3 flex items-center justify-between gap-3 text-xs font-medium text-muted">
+            <span>月预算 {config.currency}{budget}</span>
+            <span>提前 {config.reminderDays} 天提醒</span>
           </div>
         </div>
       </PanelShell>
 
-      <PanelShell delay={0.16}>
+      <PanelShell>
         <PanelHeader icon={TrendingUp} title="消费趋势" onOpenSettings={onOpenSettings} />
-        <div className="mt-5 flex h-32 items-end gap-2">
+        <div className="mt-5 flex h-32 items-end gap-2" aria-label="近六个月消费趋势柱状图">
           {trendPoints.map((point, index) => (
-            <div key={point.month} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-              <motion.div
-                initial={{ height: 18 }}
-                animate={{ height: Math.max(22, (point.value / maxValue) * 112) }}
-                transition={{ delay: 0.05 * index, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-                className="w-full rounded-full bg-gradient-to-t from-primary to-secondary shadow-[0_8px_24px_rgba(124,92,255,.18)]"
+            <div key={point.month} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+              <div
+                style={{ height: `${Math.max(22, (point.value / maxValue) * 96)}px` }}
+                className={`w-full max-w-7 rounded-sm ${index === trendPoints.length - 1 ? 'bg-primary' : 'bg-[#CFD8D3]'}`}
+                title={`${point.month}: ${point.value}`}
               />
               <div className="text-[10px] font-semibold text-muted">{point.month}</div>
             </div>
@@ -96,35 +130,27 @@ export function QuickPanel({
   );
 }
 
-function PanelShell({ children, delay }: { children: React.ReactNode; delay: number }) {
-  return (
-    <motion.section
-      initial={{ opacity: 0, x: 18 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      className="theme-surface min-w-0 rounded-[28px] border border-black/[0.05] bg-white/74 p-5 shadow-glow backdrop-blur-2xl"
-    >
-      {children}
-    </motion.section>
-  );
+function PanelShell({ children }: { children: React.ReactNode }) {
+  return <section className="theme-surface min-w-0 rounded-lg border border-[#E0E6E2] bg-white p-5 shadow-glow">{children}</section>;
 }
 
 function PanelHeader({ icon: Icon, title, onOpenSettings }: { icon: PanelIcon; title: string; onOpenSettings: () => void }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="theme-icon-chip grid h-9 w-9 shrink-0 place-items-center rounded-[14px] bg-[#F1ECFF] text-primary">
-          <Icon size={17} />
+      <div className="flex min-w-0 items-center gap-2.5">
+        <div className="theme-icon-chip grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#E8F3F1] text-primary">
+          <Icon size={16} />
         </div>
-        <div className="truncate text-sm font-semibold text-ink">{title}</div>
+        <div className="truncate text-sm font-bold text-ink">{title}</div>
       </div>
       <button
         type="button"
+        title="打开工作区设置"
         onClick={onOpenSettings}
-        className="shrink-0 text-muted transition hover:text-primary"
-        aria-label={`${title}详情`}
+        className="theme-icon-button grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-transparent text-muted transition hover:border-[#DDE4E0] hover:text-primary"
+        aria-label={`${title}设置`}
       >
-        <ArrowUpRight size={17} />
+        <Settings2 size={15} />
       </button>
     </div>
   );
