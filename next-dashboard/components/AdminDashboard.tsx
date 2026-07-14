@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { AdminPasswordDialog } from '@/components/AdminPasswordDialog';
 import { HeroCard } from '@/components/HeroCard';
 import DatePickerField from '@/components/DatePickerField';
 import { EmailDeliverySetting } from '@/components/EmailDeliverySetting';
@@ -448,6 +449,7 @@ export default function AdminDashboard() {
   const [statusFilter, setStatusFilter] = useState<'all' | SubscriptionStatus>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [theme, setTheme] = useState<DashboardTheme>('forest');
@@ -879,6 +881,7 @@ export default function AdminDashboard() {
     setConfigForm(defaultConfig);
     setServerSyncError('');
     setLoginOpen(false);
+    setPasswordDialogOpen(false);
     closeEditor();
     closeConfigEditor();
   }
@@ -922,6 +925,19 @@ export default function AdminDashboard() {
       setFrontendDisplayModeForm(frontendDisplayModeRef.current);
       setConfigOpen(true);
     });
+  }
+
+  function openPasswordDialog() {
+    requireAdmin(() => {
+      setPasswordDialogOpen(true);
+    });
+  }
+
+  function handlePasswordSessionExpired() {
+    window.localStorage.removeItem(authStorageKey);
+    setIsAdmin(false);
+    setPasswordDialogOpen(false);
+    openLoginDialog();
   }
 
   function scrollToSection<T extends HTMLElement>(targetRef: React.RefObject<T | null>) {
@@ -1161,6 +1177,7 @@ export default function AdminDashboard() {
           onNotificationSelect={handleNotificationSelect}
           onNavigate={handleNavigate}
           onOpenLogin={openLoginDialog}
+          onOpenChangePassword={openPasswordDialog}
           onOpenSettings={openConfigDialog}
           onOpenCreate={openCreateDialog}
           onLogout={handleLogout}
@@ -1482,6 +1499,12 @@ export default function AdminDashboard() {
         </div>
       ) : null}
 
+      <AdminPasswordDialog
+        open={passwordDialogOpen}
+        onClose={() => setPasswordDialogOpen(false)}
+        onSessionExpired={handlePasswordSessionExpired}
+      />
+
       {loginOpen ? (
         <div className="theme-overlay fixed inset-0 z-[60] grid place-items-center bg-[#17211B]/50 p-4 backdrop-blur-sm" onClick={closeLoginDialog}>
           <form
@@ -1511,7 +1534,7 @@ export default function AdminDashboard() {
 
             <p className="mt-4 text-sm leading-6 text-muted">受保护的工作区操作需要管理员身份。</p>
             <div className="theme-inset mt-3 rounded-lg border border-[#E4E9E6] bg-[#F7F9F8] px-3 py-2 text-xs font-semibold text-muted">
-              管理员账号与密码由部署环境变量配置
+              管理员账号由部署环境变量配置，密码可在登录后的账户菜单中修改
             </div>
 
             <div className="mt-5 grid gap-4">

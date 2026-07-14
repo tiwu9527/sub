@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!hasValidAdminSession(request)) return apiError('ADMIN_SESSION_REQUIRED', '请先登录管理员账号。', 401);
+  if (!(await hasValidAdminSession(request))) return apiError('ADMIN_SESSION_REQUIRED', '请先登录管理员账号。', 401);
 
   try {
     return json({ ok: true, ...(await getReminderJobStatus()) });
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const cronAuthorized = hasValidCronAuthorization(request);
   if (!cronAuthorized) {
-    if (!hasValidAdminSession(request)) return apiError('REMINDER_AUTH_REQUIRED', '提醒任务认证失败。', 401);
+    if (!(await hasValidAdminSession(request))) return apiError('REMINDER_AUTH_REQUIRED', '提醒任务认证失败。', 401);
     if (!hasSameOrigin(request)) return apiError('INVALID_ORIGIN', '请求来源无效。', 403);
   }
 

@@ -17,7 +17,7 @@ const maxRequestBuckets = 1000;
 const requestBuckets = new Map<string, number[]>();
 
 export async function POST(request: Request) {
-  if (!hasValidAdminSession(request)) {
+  if (!(await hasValidAdminSession(request))) {
     return apiError('ADMIN_SESSION_REQUIRED', '管理员会话已失效，请重新登录。', 401);
   }
   if (!hasSameOrigin(request)) {

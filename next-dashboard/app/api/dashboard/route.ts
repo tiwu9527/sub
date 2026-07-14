@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 const maximumBodyBytes = 2 * 1024 * 1024;
 
 export async function GET(request: Request) {
-  if (!hasValidAdminSession(request)) return apiError('ADMIN_SESSION_REQUIRED', '请先登录管理员账号。', 401);
+  if (!(await hasValidAdminSession(request))) return apiError('ADMIN_SESSION_REQUIRED', '请先登录管理员账号。', 401);
 
   try {
     return json({ ok: true, ...(await getDashboardState()) });
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!hasValidAdminSession(request)) return apiError('ADMIN_SESSION_REQUIRED', '管理员会话已失效，请重新登录。', 401);
+  if (!(await hasValidAdminSession(request))) return apiError('ADMIN_SESSION_REQUIRED', '管理员会话已失效，请重新登录。', 401);
   if (!hasSameOrigin(request)) return apiError('INVALID_ORIGIN', '请求来源无效。', 403);
   if (!request.headers.get('content-type')?.toLowerCase().includes('application/json')) {
     return apiError('INVALID_CONTENT_TYPE', '请求格式必须为 JSON。', 415);

@@ -2,14 +2,18 @@ import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 import {
   adminSessionCookieName,
-  adminSessionMaxAgeSeconds,
   createAdminSessionToken,
+  getAdminSessionCookieOptions,
   hasValidAdminSession,
   isAdminSessionConfigured
 } from '@/lib/admin-session';
+import {
+  initializeAdminCredential,
+  verifyAdminPassword,
+  type AdminPasswordVerification
+} from '@/lib/admin-credentials';
 
 const defaultAdminUsername = 'admin';
-const defaultAdminPassword = 'admin';
 const maxLoginBodyBytes = 4 * 1024;
 const loginFailureWindowMs = 15 * 60 * 1000;
 const maxLoginFailuresPerWindow = 8;
@@ -56,55 +60,57 @@ export async function POST(request: Request) {
     );
   }
 
-  const configuredPassword = process.env.ADMIN_PASSWORD;
-  if (process.env.NODE_ENV === 'production' && (!configuredPassword || !isAdminSessionConfigured())) {
+  if (process.env.NODE_ENV === 'production' && !isAdminSessionConfigured()) {
     return NextResponse.json({ ok: false, error: 'ADMIN_AUTH_NOT_CONFIGURED' }, { status: 503 });
   }
 
   const expectedUsername = process.env.ADMIN_USERNAME || defaultAdminUsername;
-  const expectedPassword = configuredPassword || defaultAdminPassword;
+  let passwordVerification: AdminPasswordVerification;
+  try {
+    passwordVerification = await verifyAdminPassword(password);
+  } catch (error) {
+    console.error('Failed to read administrator credentials.', getSafeError(error));
+    return NextResponse.json({ ok: false, error: 'ADMIN_AUTH_UNAVAILABLE' }, { status: 503 });
+  }
 
-  if (safeEquals(username, expectedUsername) && safeEquals(password, expectedPassword)) {
-    loginFailureBuckets.delete(clientKey);
-    const response = NextResponse.json({ ok: true });
-    response.cookies.set(adminSessionCookieName, createAdminSessionToken(), {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: shouldUseSecureCookie(request),
-      maxAge: adminSessionMaxAgeSeconds,
-      path: '/'
-    });
-    return response;
+  if (!passwordVerification.configured) {
+    return NextResponse.json({ ok: false, error: 'ADMIN_AUTH_NOT_CONFIGURED' }, { status: 503 });
+  }
+
+  if (safeEquals(username, expectedUsername) && passwordVerification.valid) {
+    try {
+      const sessionGeneration = await initializeAdminCredential(password, passwordVerification);
+      loginFailureBuckets.delete(clientKey);
+      const response = NextResponse.json({ ok: true });
+      response.cookies.set(
+        adminSessionCookieName,
+        createAdminSessionToken(sessionGeneration),
+        getAdminSessionCookieOptions(request)
+      );
+      return response;
+    } catch (error) {
+      console.error('Failed to initialize administrator credentials.', getSafeError(error));
+      return NextResponse.json({ ok: false, error: 'ADMIN_AUTH_UNAVAILABLE' }, { status: 503 });
+    }
   }
 
   recordLoginFailure(clientKey);
   return NextResponse.json({ ok: false }, { status: 401 });
 }
 
-export function GET(request: Request) {
-  const valid = hasValidAdminSession(request);
+export async function GET(request: Request) {
+  const valid = await hasValidAdminSession(request);
   return NextResponse.json({ ok: valid }, { status: valid ? 200 : 401 });
 }
 
 export function DELETE(request: Request) {
   const response = NextResponse.json({ ok: true });
   response.cookies.set(adminSessionCookieName, '', {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: shouldUseSecureCookie(request),
-    expires: new Date(0),
-    path: '/'
+    ...getAdminSessionCookieOptions(request),
+    maxAge: 0,
+    expires: new Date(0)
   });
   return response;
-}
-
-function shouldUseSecureCookie(request: Request) {
-  const configured = process.env.ADMIN_COOKIE_SECURE?.trim().toLowerCase();
-  if (configured === 'true') return true;
-  if (configured === 'false') return false;
-
-  const forwardedProtocol = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-  return forwardedProtocol ? forwardedProtocol === 'https' : new URL(request.url).protocol === 'https:';
 }
 
 function getClientKey(request: Request) {
@@ -135,4 +141,8 @@ function pruneLoginFailureBuckets(now: number) {
   for (const [key, failures] of loginFailureBuckets) {
     if (!failures.some((timestamp) => now - timestamp < loginFailureWindowMs)) loginFailureBuckets.delete(key);
   }
+}
+
+function getSafeError(error: unknown) {
+  return error instanceof Error ? error.message.slice(0, 300) : 'Unknown administrator authentication error';
 }

@@ -49,6 +49,13 @@ chmod +x scripts/deploy.sh
 APP_PORT=8080 ADMIN_USERNAME=admin ADMIN_PASSWORD='your-password' ./scripts/deploy.sh
 ```
 
+## 管理员密码
+
+- `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 用于首次初始化管理员凭据；首次成功登录后，密码会以带随机盐的哈希写入 SQLite，不会以明文保存到数据库。
+- 管理员登录后可从账户菜单选择「修改账户密码」，输入当前密码和新密码完成更新。
+- 密码更新后当前窗口保持登录，其他设备上的旧管理员会话会立即失效。
+- 已初始化的数据库不会因重启或修改 `ADMIN_PASSWORD` 自动覆盖在线修改后的密码，避免部署过程意外还原旧密码。
+
 ## 配置邮件提醒
 
 邮件提醒通过 SMTP 服务发送。部署前设置以下变量：

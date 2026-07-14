@@ -9,6 +9,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clock3,
+  KeyRound,
   LockKeyhole,
   LogOut,
   Palette,
@@ -50,6 +51,7 @@ export function Sidebar({
   onNotificationSelect,
   onNavigate,
   onOpenLogin,
+  onOpenChangePassword,
   onOpenSettings,
   onOpenCreate,
   onLogout
@@ -67,6 +69,7 @@ export function Sidebar({
   onNotificationSelect: (notification: DashboardNotification) => void;
   onNavigate: (view: NavView) => void;
   onOpenLogin: () => void;
+  onOpenChangePassword: () => void;
   onOpenSettings: () => void;
   onOpenCreate: () => void;
   onLogout: () => void;
@@ -350,6 +353,9 @@ export function Sidebar({
             ) : null}
             <MenuButton icon={Plus} label={isAdmin ? '新建订阅' : '登录后新建订阅'} onClick={() => runAdminAction(onOpenCreate)} />
             <MenuButton icon={Settings} label="工作区设置" onClick={() => runAdminAction(onOpenSettings)} />
+            {isAdmin ? (
+              <MenuButton icon={KeyRound} label="修改账户密码" onClick={() => runAdminAction(onOpenChangePassword)} />
+            ) : null}
             {isAdmin ? (
               <button
                 type="button"

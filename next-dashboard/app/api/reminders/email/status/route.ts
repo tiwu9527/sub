@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!hasValidAdminSession(request)) {
+  if (!(await hasValidAdminSession(request))) {
     return json({ ok: false, code: 'ADMIN_SESSION_REQUIRED', message: '管理员会话已失效，请重新登录。' }, 401);
   }
 
