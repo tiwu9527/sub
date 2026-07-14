@@ -19,7 +19,9 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { HeroCard } from '@/components/HeroCard';
 import DatePickerField from '@/components/DatePickerField';
+import { EmailDeliverySetting } from '@/components/EmailDeliverySetting';
 import { QuickPanel } from '@/components/QuickPanel';
+import { ReminderSchedulerSetting } from '@/components/ReminderSchedulerSetting';
 import { Sidebar } from '@/components/Sidebar';
 import type { DashboardNotification, NavView } from '@/components/Sidebar';
 import { StatsCard } from '@/components/StatsCard';
@@ -28,6 +30,12 @@ import { FrontendDisplayModeSetting } from '@/components/templates/FrontendDispl
 import { FrontendTemplateSetting } from '@/components/templates/FrontendTemplateSetting';
 import { statusLabels, subscriptions as initialSubscriptions } from '@/lib/data';
 import type { Stat, Subscription, SubscriptionMember, SubscriptionStatus } from '@/lib/data';
+import {
+  defaultDashboardConfig,
+  type DashboardState,
+  type DashboardSubscription,
+  type DashboardWorkspaceConfig
+} from '@/lib/dashboard-state';
 import { frontendTemplateStorageKey, isTemplateSlug } from '@/lib/templates';
 import type { TemplateSlug } from '@/lib/templates';
 import { dashboardThemeStorageKey, isDashboardTheme } from '@/lib/themes';
@@ -57,17 +65,8 @@ type LoginForm = {
   password: string;
 };
 
-type WorkspaceConfig = {
-  workspaceName: string;
-  monthlyBudget: string;
-  currency: string;
-  reminderDays: string;
-  copyrightText: string;
-};
-
-type PersistedSubscription = Omit<Subscription, 'icon'> & {
-  iconName: IconName;
-};
+type WorkspaceConfig = DashboardWorkspaceConfig;
+type PersistedSubscription = DashboardSubscription;
 
 type OverviewStatAction = 'analytics' | 'subscriptions' | 'nextBilling' | 'due';
 
@@ -81,6 +80,7 @@ type OverviewStatItem = {
 const authStorageKey = 'subscription-dashboard-admin-session';
 const subscriptionStorageKey = 'subscription-dashboard-items';
 const configStorageKey = 'subscription-dashboard-workspace-config';
+const serverMigrationStorageKey = 'subscription-dashboard-server-migrated';
 
 const emptyForm: NewSubscriptionForm = {
   name: '',
@@ -94,13 +94,7 @@ const emptyForm: NewSubscriptionForm = {
   memberDetails: []
 };
 
-const defaultConfig: WorkspaceConfig = {
-  workspaceName: 'Personal workspace',
-  monthlyBudget: '40',
-  currency: '¥',
-  reminderDays: '3',
-  copyrightText: '© 2026 续费管家. 保留所有权利。'
-};
+const defaultConfig: WorkspaceConfig = defaultDashboardConfig;
 
 const billingCycleOptions = [
   { value: '月付', months: 1 },
@@ -323,6 +317,7 @@ function serializeSubscriptions(subscriptions: Subscription[]): PersistedSubscri
     const { icon: _icon, ...serializable } = subscription;
     return {
       ...serializable,
+      status: subscription.status === 'paused' ? 'paused' : 'active',
       iconName: resolveIconName(subscription, index)
     };
   });
@@ -336,10 +331,7 @@ function restoreSubscription(value: unknown, index: number): Subscription | null
 
   const fallbackIcon = iconPool[index % iconPool.length];
   const iconName = isIconName(subscription.iconName) ? subscription.iconName : fallbackIcon.iconName;
-  const status: SubscriptionStatus =
-    subscription.status === 'due' || subscription.status === 'paused' || subscription.status === 'active'
-      ? subscription.status
-      : 'active';
+  const status: SubscriptionStatus = subscription.status === 'paused' ? 'paused' : 'active';
   const nextBilling = typeof subscription.nextBilling === 'string' ? subscription.nextBilling : '2026-07-15';
   const storedMemberEmails = Array.isArray(subscription.memberEmails)
     ? subscription.memberEmails.filter((email): email is string => typeof email === 'string').map((email) => email.trim().toLowerCase())
@@ -401,6 +393,53 @@ function restoreWorkspaceConfig(rawValue: string | null): WorkspaceConfig | null
   }
 }
 
+function restoreDashboardState(value: unknown): DashboardState | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const candidate = value as Partial<DashboardState>;
+  if (!Array.isArray(candidate.items) || !Number.isInteger(candidate.revision)) return null;
+  const restoredItems = candidate.items
+    .map((subscription, index) => restoreSubscription(subscription, index))
+    .filter((subscription): subscription is Subscription => Boolean(subscription));
+  const restoredConfig = restoreWorkspaceConfig(JSON.stringify(candidate.config ?? null)) ?? defaultConfig;
+
+  return {
+    initialized: candidate.initialized === true,
+    revision: Number(candidate.revision),
+    items: serializeSubscriptions(restoredItems),
+    config: restoredConfig,
+    theme: isDashboardTheme(candidate.theme) ? candidate.theme : 'forest',
+    frontendTemplate:
+      typeof candidate.frontendTemplate === 'string' && isTemplateSlug(candidate.frontendTemplate)
+        ? candidate.frontendTemplate
+        : 'cards',
+    frontendDisplayMode: isFrontendDisplayMode(candidate.frontendDisplayMode)
+      ? candidate.frontendDisplayMode
+      : defaultFrontendDisplayMode
+  };
+}
+
+function readLegacyDashboardState(): DashboardState {
+  const storedItems = restoreSubscriptions(window.localStorage.getItem(subscriptionStorageKey));
+  const storedConfig = restoreWorkspaceConfig(window.localStorage.getItem(configStorageKey));
+  const storedTheme = window.localStorage.getItem(dashboardThemeStorageKey);
+  const storedFrontendTemplate = window.localStorage.getItem(frontendTemplateStorageKey);
+  const storedFrontendDisplayMode = window.localStorage.getItem(frontendDisplayModeStorageKey);
+
+  return {
+    initialized: true,
+    revision: 0,
+    items: serializeSubscriptions(storedItems ?? initialSubscriptions),
+    config: storedConfig ?? defaultConfig,
+    theme: isDashboardTheme(storedTheme) ? storedTheme : 'forest',
+    frontendTemplate:
+      storedFrontendTemplate && isTemplateSlug(storedFrontendTemplate) ? storedFrontendTemplate : 'cards',
+    frontendDisplayMode: isFrontendDisplayMode(storedFrontendDisplayMode)
+      ? storedFrontendDisplayMode
+      : defaultFrontendDisplayMode
+  };
+}
+
 export default function AdminDashboard() {
   const [items, setItems] = useState<Subscription[]>([]);
   const [itemsStorageReady, setItemsStorageReady] = useState(false);
@@ -424,7 +463,17 @@ export default function AdminDashboard() {
   const [frontendTemplateForm, setFrontendTemplateForm] = useState<TemplateSlug>('cards');
   const [frontendDisplayMode, setFrontendDisplayMode] = useState<FrontendDisplayMode>(defaultFrontendDisplayMode);
   const [frontendDisplayModeForm, setFrontendDisplayModeForm] = useState<FrontendDisplayMode>(defaultFrontendDisplayMode);
+  const [serverSyncError, setServerSyncError] = useState('');
+  const [isServerSyncing, setIsServerSyncing] = useState(false);
   const pendingAdminAction = useRef<(() => void) | null>(null);
+  const itemsRef = useRef<Subscription[]>([]);
+  const configRef = useRef<WorkspaceConfig>(defaultConfig);
+  const frontendTemplateRef = useRef<TemplateSlug>('cards');
+  const frontendDisplayModeRef = useRef<FrontendDisplayMode>(defaultFrontendDisplayMode);
+  const revisionRef = useRef(0);
+  const queuedServerStateRef = useRef<DashboardState | null>(null);
+  const serverSyncInProgressRef = useRef(false);
+  const skipNextServerSyncRef = useRef(false);
   const overviewRef = useRef<HTMLElement | null>(null);
   const subscriptionsRef = useRef<HTMLDivElement | null>(null);
   const analyticsRef = useRef<HTMLDivElement | null>(null);
@@ -432,88 +481,165 @@ export default function AdminDashboard() {
   const formMonthlyPrice = formatMoney(getMonthlyCostFromPrice(form.price, formCycle), config.currency);
   const formCycleMonths = getBillingCycleMonths(formCycle);
 
+  function applyDashboardState(state: DashboardState) {
+    const restoredItems = state.items
+      .map((subscription, index) => restoreSubscription(subscription, index))
+      .filter((subscription): subscription is Subscription => Boolean(subscription));
+
+    skipNextServerSyncRef.current = true;
+    revisionRef.current = state.revision;
+    itemsRef.current = restoredItems;
+    configRef.current = state.config;
+    frontendTemplateRef.current = state.frontendTemplate;
+    frontendDisplayModeRef.current = state.frontendDisplayMode;
+    setItems(restoredItems);
+    setConfig(state.config);
+    setConfigForm(state.config);
+    setTheme(state.theme);
+    setFrontendTemplate(state.frontendTemplate);
+    setFrontendTemplateForm(state.frontendTemplate);
+    setFrontendDisplayMode(state.frontendDisplayMode);
+    setFrontendDisplayModeForm(state.frontendDisplayMode);
+    setItemsStorageReady(true);
+  }
+
+  async function requestDashboardSave(state: DashboardState) {
+    const response = await fetch('/api/dashboard', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: revisionRef.current, state })
+    });
+    const result = (await response.json().catch(() => null)) as
+      | { ok?: boolean; revision?: number; message?: string; code?: string }
+      | null;
+
+    if (response.status === 401) {
+      window.localStorage.removeItem(authStorageKey);
+      setIsAdmin(false);
+      setLoginOpen(true);
+      throw new Error('管理员会话已失效，请重新登录。');
+    }
+    if (!response.ok || !Number.isInteger(result?.revision)) {
+      throw new Error(result?.message || '服务端暂时无法保存工作区数据。');
+    }
+
+    revisionRef.current = Number(result?.revision);
+  }
+
+  async function flushQueuedServerState() {
+    if (serverSyncInProgressRef.current) return;
+    serverSyncInProgressRef.current = true;
+    setIsServerSyncing(true);
+
+    try {
+      while (queuedServerStateRef.current) {
+        const state = queuedServerStateRef.current;
+        queuedServerStateRef.current = null;
+        await requestDashboardSave(state);
+        setServerSyncError('');
+      }
+    } catch (error) {
+      queuedServerStateRef.current = null;
+      setServerSyncError(error instanceof Error ? error.message : '服务端同步失败。');
+    } finally {
+      serverSyncInProgressRef.current = false;
+      if (queuedServerStateRef.current) void flushQueuedServerState();
+      else setIsServerSyncing(false);
+    }
+  }
+
+  async function loadDashboardState() {
+    const response = await fetch('/api/dashboard', { method: 'GET', cache: 'no-store' });
+    const result = (await response.json().catch(() => null)) as unknown;
+    if (!response.ok) {
+      const message = result && typeof result === 'object' && 'message' in result && typeof result.message === 'string'
+        ? result.message
+        : '暂时无法读取服务端数据。';
+      throw new Error(message);
+    }
+
+    let state = restoreDashboardState(result);
+    if (!state) throw new Error('服务端返回的工作区数据无效。');
+
+    if (!state.initialized) {
+      state = readLegacyDashboardState();
+      revisionRef.current = 0;
+      await requestDashboardSave(state);
+      state.revision = revisionRef.current;
+      window.localStorage.setItem(serverMigrationStorageKey, new Date().toISOString());
+    }
+
+    applyDashboardState(state);
+    setServerSyncError('');
+    setIsServerSyncing(false);
+  }
+
   useEffect(() => {
     let active = true;
+    window.localStorage.removeItem('subscription-dashboard-density');
+    window.localStorage.removeItem('subscription-dashboard-layout');
 
-    fetch('/api/auth', { method: 'GET', cache: 'no-store' })
-      .then((response) => {
+    void fetch('/api/auth', { method: 'GET', cache: 'no-store' })
+      .then(async (response) => {
         if (!active) return;
-
-        if (response.ok) {
-          window.localStorage.setItem(authStorageKey, 'true');
-          setIsAdmin(true);
+        if (!response.ok) {
+          window.localStorage.removeItem(authStorageKey);
+          setIsAdmin(false);
+          setItems([]);
+          setItemsStorageReady(true);
+          setLoginOpen(true);
           return;
         }
 
-        window.localStorage.removeItem(authStorageKey);
-        setIsAdmin(false);
+        window.localStorage.setItem(authStorageKey, 'true');
+        setIsAdmin(true);
+        await loadDashboardState();
       })
-      .catch(() => {
+      .catch((error) => {
         if (!active) return;
-        window.localStorage.removeItem(authStorageKey);
-        setIsAdmin(false);
+        setItems([]);
+        setItemsStorageReady(true);
+        setServerSyncError(error instanceof Error ? error.message : '暂时无法连接服务端数据库。');
       });
 
     return () => {
       active = false;
     };
+    // Authentication bootstrap intentionally runs once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    window.localStorage.removeItem('subscription-dashboard-density');
-    window.localStorage.removeItem('subscription-dashboard-layout');
-    const storedItems = restoreSubscriptions(window.localStorage.getItem(subscriptionStorageKey));
-    const storedConfig = restoreWorkspaceConfig(window.localStorage.getItem(configStorageKey));
-    const storedTheme = window.localStorage.getItem(dashboardThemeStorageKey);
-    const storedFrontendTemplate = window.localStorage.getItem(frontendTemplateStorageKey);
-    const storedFrontendDisplayMode = window.localStorage.getItem(frontendDisplayModeStorageKey);
-
-    setItems(storedItems ?? initialSubscriptions);
-    if (storedConfig) {
-      setConfig(storedConfig);
-      setConfigForm(storedConfig);
+    if (!itemsStorageReady || !isAdmin) return;
+    if (skipNextServerSyncRef.current) {
+      skipNextServerSyncRef.current = false;
+      return;
     }
-    if (isDashboardTheme(storedTheme)) setTheme(storedTheme);
-    if (storedFrontendTemplate && isTemplateSlug(storedFrontendTemplate)) {
-      setFrontendTemplate(storedFrontendTemplate);
-      setFrontendTemplateForm(storedFrontendTemplate);
-    }
-    if (isFrontendDisplayMode(storedFrontendDisplayMode)) {
-      setFrontendDisplayMode(storedFrontendDisplayMode);
-      setFrontendDisplayModeForm(storedFrontendDisplayMode);
-    }
-    setItemsStorageReady(true);
-  }, []);
+
+    const timeout = window.setTimeout(() => {
+      queuedServerStateRef.current = {
+        initialized: true,
+        revision: revisionRef.current,
+        items: serializeSubscriptions(items),
+        config,
+        theme,
+        frontendTemplate,
+        frontendDisplayMode
+      };
+      void flushQueuedServerState();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+    // Save only when the serialized workspace inputs change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, frontendDisplayMode, frontendTemplate, isAdmin, items, itemsStorageReady, theme]);
 
   useEffect(() => {
-    if (!itemsStorageReady) return;
-
-    window.localStorage.setItem(subscriptionStorageKey, JSON.stringify(serializeSubscriptions(items)));
-  }, [items, itemsStorageReady]);
-
-  useEffect(() => {
-    if (!itemsStorageReady) return;
-
-    window.localStorage.setItem(configStorageKey, JSON.stringify(config));
-  }, [config, itemsStorageReady]);
-
-  useEffect(() => {
-    if (!itemsStorageReady) return;
-
-    window.localStorage.setItem(dashboardThemeStorageKey, theme);
-  }, [itemsStorageReady, theme]);
-
-  useEffect(() => {
-    if (!itemsStorageReady) return;
-
-    window.localStorage.setItem(frontendTemplateStorageKey, frontendTemplate);
-  }, [frontendTemplate, itemsStorageReady]);
-
-  useEffect(() => {
-    if (!itemsStorageReady) return;
-
-    window.localStorage.setItem(frontendDisplayModeStorageKey, frontendDisplayMode);
-  }, [frontendDisplayMode, itemsStorageReady]);
+    itemsRef.current = items;
+    configRef.current = config;
+    frontendTemplateRef.current = frontendTemplate;
+    frontendDisplayModeRef.current = frontendDisplayMode;
+  }, [config, frontendDisplayMode, frontendTemplate, items]);
 
   const filteredSubscriptions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -706,13 +832,25 @@ export default function AdminDashboard() {
       });
 
       if (!response.ok) {
-        setLoginError(response.status === 503 ? '管理员登录尚未完成服务端配置' : '账号或密码不正确');
+        setLoginError(
+          response.status === 503
+            ? '管理员登录尚未完成服务端配置'
+            : response.status === 429
+              ? '登录尝试次数过多，请稍后再试'
+              : '账号或密码不正确'
+        );
         return;
       }
 
       const action = pendingAdminAction.current;
       pendingAdminAction.current = null;
       window.localStorage.setItem(authStorageKey, 'true');
+      try {
+        await loadDashboardState();
+      } catch (error) {
+        setLoginError(error instanceof Error ? error.message : '暂时无法读取服务端数据库');
+        return;
+      }
       setIsAdmin(true);
       setLoginOpen(false);
       setLoginForm({ username: '', password: '' });
@@ -729,6 +867,17 @@ export default function AdminDashboard() {
     void fetch('/api/auth', { method: 'DELETE' });
     window.localStorage.removeItem(authStorageKey);
     setIsAdmin(false);
+    revisionRef.current = 0;
+    queuedServerStateRef.current = null;
+    skipNextServerSyncRef.current = true;
+    itemsRef.current = [];
+    configRef.current = defaultConfig;
+    frontendTemplateRef.current = 'cards';
+    frontendDisplayModeRef.current = defaultFrontendDisplayMode;
+    setItems([]);
+    setConfig(defaultConfig);
+    setConfigForm(defaultConfig);
+    setServerSyncError('');
     setLoginOpen(false);
     closeEditor();
     closeConfigEditor();
@@ -744,19 +893,22 @@ export default function AdminDashboard() {
 
   function openEditDialog(subscription: Subscription) {
     requireAdmin(() => {
+      const currentSubscription = itemsRef.current.find((item) => item.id === subscription.id) ?? subscription;
       const memberDetails =
-        subscription.memberDetails.length > 0 ? subscription.memberDetails : buildMemberDetails(subscription.memberEmails, subscription.nextBilling);
+        currentSubscription.memberDetails.length > 0
+          ? currentSubscription.memberDetails
+          : buildMemberDetails(currentSubscription.memberEmails, currentSubscription.nextBilling);
 
-      setEditingId(subscription.id);
+      setEditingId(currentSubscription.id);
       setForm({
-        name: subscription.name,
-        plan: subscription.plan,
-        tag: subscription.tag,
-        price: subscription.price,
-        cycle: normalizeBillingCycle(subscription.cycle),
-        nextBilling: subscription.nextBilling,
-        members: subscription.members,
-        memberEmails: formatMemberEmails(subscription.memberEmails),
+        name: currentSubscription.name,
+        plan: currentSubscription.plan,
+        tag: currentSubscription.tag,
+        price: currentSubscription.price,
+        cycle: normalizeBillingCycle(currentSubscription.cycle),
+        nextBilling: currentSubscription.nextBilling,
+        members: currentSubscription.members,
+        memberEmails: formatMemberEmails(currentSubscription.memberEmails),
         memberDetails
       });
       setCreateOpen(true);
@@ -765,14 +917,14 @@ export default function AdminDashboard() {
 
   function openConfigDialog() {
     requireAdmin(() => {
-      setConfigForm(config);
-      setFrontendTemplateForm(frontendTemplate);
-      setFrontendDisplayModeForm(frontendDisplayMode);
+      setConfigForm(configRef.current);
+      setFrontendTemplateForm(frontendTemplateRef.current);
+      setFrontendDisplayModeForm(frontendDisplayModeRef.current);
       setConfigOpen(true);
     });
   }
 
-  function scrollToSection(targetRef: React.RefObject<HTMLElement | HTMLDivElement>) {
+  function scrollToSection<T extends HTMLElement>(targetRef: React.RefObject<T | null>) {
     targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -894,7 +1046,8 @@ export default function AdminDashboard() {
             nextBilling,
             members: getMemberCountLabel(memberDetails.length),
             memberEmails: memberDetails.map((member) => member.email),
-            memberDetails
+            memberDetails,
+            status: subscription.status === 'paused' ? 'paused' : 'active'
           };
         })
       );
@@ -1023,6 +1176,11 @@ export default function AdminDashboard() {
                 {items.filter((subscription) => subscription.status !== 'paused').length} 项活跃服务 ·{' '}
                 {overviewStats[3]?.stat.value ?? '0'} 项需要关注
               </p>
+              {serverSyncError ? (
+                <div className="mt-3 max-w-2xl rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-xs font-semibold text-danger" role="alert">
+                  {serverSyncError}
+                </div>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button
@@ -1112,6 +1270,7 @@ export default function AdminDashboard() {
                     index={index}
                     reminderDays={getReminderDays(config.reminderDays)}
                     isAdmin={isAdmin}
+                    dataSyncing={isServerSyncing}
                     onRequireAdmin={openLoginDialog}
                     onDelete={handleDeleteSubscription}
                     onEdit={openEditDialog}
@@ -1142,7 +1301,7 @@ export default function AdminDashboard() {
       {createOpen ? (
         <div className="theme-overlay fixed inset-0 z-50 grid place-items-center bg-[#17211B]/45 p-4 backdrop-blur-sm" onClick={closeEditor}>
           <section
-            className="theme-modal w-full max-w-[520px] rounded-xl border border-[#DDE4E0] bg-white p-6 shadow-[0_24px_70px_rgba(23,33,27,.22)]"
+            className="theme-modal max-h-[calc(100vh-2rem)] w-full max-w-[560px] overflow-y-auto rounded-xl border border-[#DDE4E0] bg-white p-6 shadow-[0_24px_70px_rgba(23,33,27,.22)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4">
@@ -1289,6 +1448,8 @@ export default function AdminDashboard() {
                 onChange={(value) => setConfigForm((current) => ({ ...current, reminderDays: value }))}
                 placeholder="3"
               />
+              <EmailDeliverySetting onSessionExpired={openLoginDialog} />
+              <ReminderSchedulerSetting onSessionExpired={openLoginDialog} />
               <Field
                 label="前台版权信息"
                 value={configForm.copyrightText}

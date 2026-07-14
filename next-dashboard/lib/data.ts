@@ -8,8 +8,7 @@ import {
   LineChart,
   Music2,
   Settings,
-  Sparkles,
-  UsersRound
+  Sparkles
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -113,7 +112,7 @@ export const subscriptions: Subscription[] = [
       { id: 'netflix-mia', name: 'Mia', email: 'mia@example.com', expiresAt: '2026-07-14' },
       { id: 'netflix-lin', name: 'Lin', email: 'lin@example.com', expiresAt: '2026-07-14' }
     ],
-    status: 'due',
+    status: 'active',
     icon: Film,
     tone: 'from-[#FF5A5F] via-[#FF7A84] to-[#FFB0B5]'
   },

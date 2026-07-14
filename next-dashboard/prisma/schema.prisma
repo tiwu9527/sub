@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model WorkspaceSettings {
+  id                  String         @id @default("default")
+  workspaceName       String         @default("Personal workspace")
+  monthlyBudget       String         @default("40")
+  currency            String         @default("¥")
+  reminderDays        Int            @default(3)
+  copyrightText       String         @default("© 2026 续费管家. 保留所有权利。")
+  theme               String         @default("forest")
+  frontendTemplate    String         @default("cards")
+  frontendDisplayMode String         @default("system")
+  revision            Int            @default(0)
+  initializedAt       DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  subscriptions       Subscription[]
+}
+
+model Subscription {
+  id           String               @id
+  workspaceId  String               @default("default")
+  name         String
+  plan         String
+  tag          String
+  price        String
+  cycle        String
+  nextBilling  String
+  status       String               @default("active")
+  iconName     String               @default("cloud")
+  tone         String
+  position     Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  workspace    WorkspaceSettings    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members      SubscriptionMember[]
+
+  @@index([workspaceId, position])
+  @@index([status, nextBilling])
+}
+
+model SubscriptionMember {
+  id             String       @id
+  subscriptionId String
+  name           String
+  email          String
+  expiresAt      String
+  position       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, email])
+  @@index([subscriptionId, position])
+}
+
+model ReminderDelivery {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  memberId       String
+  recipientName  String
+  recipientEmail String
+  targetDate     String
+  status         String   @default("sending")
+  attemptCount   Int      @default(1)
+  claimedAt      DateTime @default(now())
+  sentAt         DateTime?
+  lastError      String?
+  source         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([subscriptionId, targetDate, recipientEmail])
+  @@index([status, claimedAt])
+  @@index([subscriptionId, targetDate])
+  @@index([createdAt])
+}
+
+model ReminderRun {
+  id            String    @id @default(cuid())
+  source        String
+  status        String    @default("running")
+  checkedCount  Int       @default(0)
+  eligibleCount Int       @default(0)
+  sentCount     Int       @default(0)
+  failedCount   Int       @default(0)
+  skippedCount  Int       @default(0)
+  message       String?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([startedAt])
+}
+
+model SchedulerLease {
+  key       String   @id
+  owner     String
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+}

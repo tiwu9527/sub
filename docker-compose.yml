@@ -13,16 +13,48 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       PORT: "3100"
       HOSTNAME: "0.0.0.0"
+      DATABASE_URL: "${DATABASE_URL:-file:/app/data/subscriptions.db}"
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}"
       ADMIN_SESSION_SECRET: "${ADMIN_SESSION_SECRET:?Set ADMIN_SESSION_SECRET in .env}"
-      ADMIN_COOKIE_SECURE: "${ADMIN_COOKIE_SECURE:-false}"
+      ADMIN_COOKIE_SECURE: "${ADMIN_COOKIE_SECURE:-}"
       APP_TIME_ZONE: "${APP_TIME_ZONE:-Asia/Shanghai}"
       TZ: "${APP_TIME_ZONE:-Asia/Shanghai}"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
       SMTP_SECURE: "${SMTP_SECURE:-false}"
+      SMTP_REQUIRE_TLS: "${SMTP_REQUIRE_TLS:-true}"
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASS: "${SMTP_PASS:-}"
       MAIL_FROM: "${MAIL_FROM:-}"
       MAIL_REPLY_TO: "${MAIL_REPLY_TO:-}"
+      SMTP_TEST_TO: "${SMTP_TEST_TO:-}"
+      REMINDER_CRON_SECRET: "${REMINDER_CRON_SECRET:?Set REMINDER_CRON_SECRET in .env}"
+      REMINDER_CHECK_INTERVAL_MINUTES: "${REMINDER_CHECK_INTERVAL_MINUTES:-60}"
+      REMINDER_MAX_ATTEMPTS: "${REMINDER_MAX_ATTEMPTS:-3}"
+    volumes:
+      - dashboard-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/public/dashboard').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  reminder-worker:
+    image: subscription-manager-dashboard:latest
+    container_name: subscription-manager-reminder-worker
+    restart: unless-stopped
+    depends_on:
+      next-dashboard:
+        condition: service_healthy
+    command: ["node", "worker/reminder-worker.mjs"]
+    environment:
+      NODE_ENV: production
+      REMINDER_API_URL: "http://next-dashboard:3100/api/reminders/run"
+      REMINDER_CRON_SECRET: "${REMINDER_CRON_SECRET:?Set REMINDER_CRON_SECRET in .env}"
+      REMINDER_CHECK_INTERVAL_MINUTES: "${REMINDER_CHECK_INTERVAL_MINUTES:-60}"
+      REMINDER_RUN_ON_START: "${REMINDER_RUN_ON_START:-true}"
+
+volumes:
+  dashboard-data:

@@ -4,17 +4,18 @@ import { TemplateDashboard } from '@/components/templates/TemplateDashboard';
 import { getTemplateBySlug, templates } from '@/lib/templates';
 
 type TemplatePageProps = {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 };
 
 export function generateStaticParams() {
   return templates.map((template) => ({ slug: template.slug }));
 }
 
-export function generateMetadata({ params }: TemplatePageProps): Metadata {
-  const template = getTemplateBySlug(params.slug);
+export async function generateMetadata({ params }: TemplatePageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const template = getTemplateBySlug(slug);
 
   if (!template) {
     return { title: '模板未找到 | 续费管家' };
@@ -26,8 +27,9 @@ export function generateMetadata({ params }: TemplatePageProps): Metadata {
   };
 }
 
-export default function TemplatePage({ params }: TemplatePageProps) {
-  const template = getTemplateBySlug(params.slug);
+export default async function TemplatePage({ params }: TemplatePageProps) {
+  const { slug } = await params;
+  const template = getTemplateBySlug(slug);
 
   if (!template) notFound();
 

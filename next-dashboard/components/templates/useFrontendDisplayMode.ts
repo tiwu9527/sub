@@ -8,16 +8,16 @@ import {
   type FrontendDisplayMode
 } from '@/lib/frontend-display-mode';
 
-export function useFrontendDisplayMode() {
-  const [mode, setModeState] = useState<FrontendDisplayMode>(defaultFrontendDisplayMode);
+export function useFrontendDisplayMode(preferredMode: FrontendDisplayMode = defaultFrontendDisplayMode) {
+  const [mode, setModeState] = useState<FrontendDisplayMode>(preferredMode);
 
   useEffect(() => {
     function restoreMode() {
       try {
         const storedMode = window.localStorage.getItem(frontendDisplayModeStorageKey);
-        setModeState(isFrontendDisplayMode(storedMode) ? storedMode : defaultFrontendDisplayMode);
+        setModeState(isFrontendDisplayMode(storedMode) ? storedMode : preferredMode);
       } catch {
-        setModeState(defaultFrontendDisplayMode);
+        setModeState(preferredMode);
       }
     }
 
@@ -28,7 +28,7 @@ export function useFrontendDisplayMode() {
     restoreMode();
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  }, [preferredMode]);
 
   const setMode = useCallback((nextMode: FrontendDisplayMode) => {
     setModeState(nextMode);

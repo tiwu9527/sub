@@ -8,7 +8,6 @@ export function getEffectiveSubscriptionStatus(
   now = new Date()
 ): SubscriptionStatus {
   if (subscription.status === 'paused') return 'paused';
-  if (subscription.status === 'due') return 'due';
 
   const billingDate = parseLocalDate(subscription.nextBilling);
   if (!billingDate) return 'active';

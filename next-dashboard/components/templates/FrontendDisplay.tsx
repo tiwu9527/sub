@@ -3,14 +3,10 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import { Cloud, Eye, Film, Music2, PackageOpen, ReceiptText } from 'lucide-react';
 import { subscriptions as demoSubscriptions, type Subscription, type SubscriptionMember, type SubscriptionStatus } from '@/lib/data';
-import {
-  frontendTemplateStorageKey,
-  isTemplateSlug,
-  type TemplateSlug
-} from '@/lib/templates';
-import { dashboardThemeStorageKey, isDashboardTheme } from '@/lib/themes';
+import { isTemplateSlug, type TemplateSlug } from '@/lib/templates';
+import { isDashboardTheme } from '@/lib/themes';
 import type { DashboardTheme } from '@/lib/themes';
-import { defaultFrontendDisplayMode } from '@/lib/frontend-display-mode';
+import { defaultFrontendDisplayMode, isFrontendDisplayMode, type FrontendDisplayMode } from '@/lib/frontend-display-mode';
 import { CardsTemplate } from './CardsTemplate';
 import { FrontendDisplayModeControl } from './FrontendDisplayModeControl';
 import { LedgerTemplate } from './LedgerTemplate';
@@ -19,8 +15,6 @@ import { ReceiptTemplate } from './ReceiptTemplate';
 import { useFrontendDisplayMode } from './useFrontendDisplayMode';
 
 const defaultTemplate: TemplateSlug = 'cards';
-const subscriptionStorageKey = 'subscription-dashboard-items';
-const workspaceConfigStorageKey = 'subscription-dashboard-workspace-config';
 const defaultCopyrightText = '© 2026 续费管家. 保留所有权利。';
 
 type TemplateContentProps = {
@@ -34,6 +28,7 @@ type DisplayState = {
   items: Subscription[];
   copyrightText: string;
   reminderDays: number;
+  frontendDisplayMode: FrontendDisplayMode;
 };
 
 const iconRegistry = {
@@ -65,54 +60,61 @@ const templateComponents: Record<TemplateSlug, ComponentType<TemplateContentProp
 
 export function FrontendDisplay() {
   const [displayState, setDisplayState] = useState<DisplayState | null>(null);
-  const { mode: displayMode, setMode: setDisplayMode } = useFrontendDisplayMode();
+  const { mode: displayMode, setMode: setDisplayMode } = useFrontendDisplayMode(
+    displayState?.frontendDisplayMode ?? defaultFrontendDisplayMode
+  );
 
   useEffect(() => {
-    function loadDisplayState() {
+    let active = true;
+
+    async function loadDisplayState() {
       try {
-        const storedSlug = window.localStorage.getItem(frontendTemplateStorageKey);
         const requestedSlug = new URLSearchParams(window.location.search).get('template');
-        const storedTheme = window.localStorage.getItem(dashboardThemeStorageKey);
-        const restoredItems = restoreSubscriptions(window.localStorage.getItem(subscriptionStorageKey));
-        const frontendConfig = restoreFrontendConfig(window.localStorage.getItem(workspaceConfigStorageKey));
+        const response = await fetch('/api/public/dashboard', { method: 'GET', cache: 'no-store' });
+        const result = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+        if (!response.ok || !result) throw new Error('Unable to load public dashboard.');
+
+        const restoredItems = restoreSubscriptionValues(result.items);
+        const frontendConfig = restoreFrontendConfigValue(result.config);
+        if (!active) return;
 
         setDisplayState({
           selectedSlug:
             requestedSlug && isTemplateSlug(requestedSlug)
               ? requestedSlug
-              : storedSlug && isTemplateSlug(storedSlug)
-                ? storedSlug
+              : typeof result.frontendTemplate === 'string' && isTemplateSlug(result.frontendTemplate)
+                ? result.frontendTemplate
                 : defaultTemplate,
-          selectedTheme: isDashboardTheme(storedTheme) ? storedTheme : 'forest',
-          items: restoredItems ?? demoSubscriptions,
+          selectedTheme: isDashboardTheme(result.theme) ? result.theme : 'forest',
+          items: result.initialized === true ? (restoredItems ?? []) : demoSubscriptions,
           copyrightText: frontendConfig.copyrightText,
-          reminderDays: frontendConfig.reminderDays
+          reminderDays: frontendConfig.reminderDays,
+          frontendDisplayMode: isFrontendDisplayMode(result.frontendDisplayMode)
+            ? result.frontendDisplayMode
+            : defaultFrontendDisplayMode
         });
       } catch {
+        if (!active) return;
         setDisplayState({
           selectedSlug: defaultTemplate,
           selectedTheme: 'forest',
           items: demoSubscriptions,
           copyrightText: defaultCopyrightText,
-          reminderDays: 3
+          reminderDays: 3,
+          frontendDisplayMode: defaultFrontendDisplayMode
         });
       }
     }
 
-    function handleStorage(event: StorageEvent) {
-      if (
-        event.key === frontendTemplateStorageKey ||
-        event.key === dashboardThemeStorageKey ||
-        event.key === subscriptionStorageKey ||
-        event.key === workspaceConfigStorageKey
-      ) {
-        loadDisplayState();
-      }
-    }
-
-    loadDisplayState();
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    void loadDisplayState();
+    const interval = window.setInterval(() => void loadDisplayState(), 30_000);
+    const handleFocus = () => void loadDisplayState();
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   if (!displayState) return <DisplayLoadingState />;
@@ -203,23 +205,16 @@ function DisplayLoadingState() {
   );
 }
 
-function restoreSubscriptions(rawValue: string | null): Subscription[] | null {
-  if (!rawValue) return null;
+function restoreSubscriptionValues(value: unknown): Subscription[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length === 0) return [];
 
-  try {
-    const parsed: unknown = JSON.parse(rawValue);
-    if (!Array.isArray(parsed)) return null;
-    if (parsed.length === 0) return [];
+  const restored = value
+    .slice(0, 250)
+    .map((candidate, index) => normalizeSubscription(candidate, index))
+    .filter((subscription): subscription is Subscription => subscription !== null);
 
-    const restored = parsed
-      .slice(0, 250)
-      .map((value, index) => normalizeSubscription(value, index))
-      .filter((subscription): subscription is Subscription => subscription !== null);
-
-    return restored.length > 0 ? restored : null;
-  } catch {
-    return null;
-  }
+  return restored.length > 0 ? restored : null;
 }
 
 function normalizeSubscription(value: unknown, index: number): Subscription | null {
@@ -246,7 +241,7 @@ function normalizeSubscription(value: unknown, index: number): Subscription | nu
     cycle: normalizeText(value.cycle, fallback?.cycle ?? '月付', 40),
     nextBilling,
     members: normalizeText(value.members, `${memberDetails.length} 人`, 40),
-    memberEmails: memberDetails.map((member) => member.email),
+    memberEmails: memberDetails.map((member) => member.email).filter(Boolean),
     memberDetails,
     status,
     icon: iconEntry.icon,
@@ -268,12 +263,14 @@ function normalizeMembers(
       if (!isRecord(value)) return;
 
       const email = normalizeEmail(value.email);
-      if (!email || seenEmails.has(email)) return;
+      const memberId = normalizeText(value.id, `${subscriptionId}-member-${index + 1}`, 160);
+      const memberKey = email || memberId;
+      if (!memberKey || seenEmails.has(memberKey)) return;
 
-      seenEmails.add(email);
+      seenEmails.add(memberKey);
       members.push({
-        id: normalizeText(value.id, `${subscriptionId}-member-${index + 1}`, 160),
-        name: normalizeText(value.name, getMemberNameFromEmail(email), 120),
+        id: memberId,
+        name: normalizeText(value.name, email ? getMemberNameFromEmail(email) : '成员', 120),
         email,
         expiresAt: normalizeDate(value.expiresAt, fallbackExpiresAt)
       });
@@ -340,21 +337,18 @@ function normalizeDate(value: unknown, fallback: string) {
   return Number.isNaN(parsed.getTime()) ? fallback : value;
 }
 
-function restoreFrontendConfig(rawValue: string | null) {
-  if (!rawValue) return { copyrightText: defaultCopyrightText, reminderDays: 3 };
+function restoreFrontendConfigValue(value: unknown) {
+  if (!isRecord(value)) return { copyrightText: defaultCopyrightText, reminderDays: 3 };
 
-  try {
-    const parsed: unknown = JSON.parse(rawValue);
-    if (!isRecord(parsed)) return { copyrightText: defaultCopyrightText, reminderDays: 3 };
+  const parsedReminderDays =
+    typeof value.reminderDays === 'string'
+      ? Number.parseInt(value.reminderDays, 10)
+      : typeof value.reminderDays === 'number'
+        ? value.reminderDays
+        : Number.NaN;
 
-    const parsedReminderDays =
-      typeof parsed.reminderDays === 'string' ? Number.parseInt(parsed.reminderDays, 10) : Number.NaN;
-
-    return {
-      copyrightText: normalizeText(parsed.copyrightText, defaultCopyrightText, 200),
-      reminderDays: Number.isFinite(parsedReminderDays) ? Math.max(parsedReminderDays, 0) : 3
-    };
-  } catch {
-    return { copyrightText: defaultCopyrightText, reminderDays: 3 };
-  }
+  return {
+    copyrightText: normalizeText(value.copyrightText, defaultCopyrightText, 200),
+    reminderDays: Number.isFinite(parsedReminderDays) ? Math.max(parsedReminderDays, 0) : 3
+  };
 }

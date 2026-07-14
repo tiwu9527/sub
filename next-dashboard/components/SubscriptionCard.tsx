@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Edit3,
   LoaderCircle,
@@ -39,6 +40,7 @@ export function SubscriptionCard({
   onTogglePause,
   onAddMember,
   isAdmin,
+  dataSyncing,
   onRequireAdmin
 }: {
   subscription: Subscription;
@@ -49,13 +51,14 @@ export function SubscriptionCard({
   onTogglePause: (id: string) => void;
   onAddMember: (subscriptionId: string, member: Omit<SubscriptionMember, 'id'>) => void;
   isAdmin: boolean;
+  dataSyncing: boolean;
   onRequireAdmin: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [memberForm, setMemberForm] = useState({ name: '', email: '', expiresAt: subscription.nextBilling });
   const [reminderState, setReminderState] = useState<{
-    status: 'idle' | 'sending' | 'success' | 'error';
+    status: 'idle' | 'sending' | 'success' | 'warning' | 'error';
     message: string;
   }>({ status: 'idle', message: '' });
   const billingDate = parseBillingDate(subscription.nextBilling);
@@ -69,6 +72,10 @@ export function SubscriptionCard({
       onRequireAdmin();
       return;
     }
+    if (dataSyncing) {
+      setReminderState({ status: 'warning', message: '正在保存最新订阅数据，请稍后再发送提醒。' });
+      return;
+    }
 
     const recipientCount = subscription.memberEmails.length;
     const confirmed = window.confirm(`确定向 ${subscription.name} 的 ${recipientCount} 位成员发送续费提醒邮件吗？`);
@@ -77,25 +84,10 @@ export function SubscriptionCard({
     setReminderState({ status: 'sending', message: '正在发送续费提醒…' });
 
     try {
-      const members =
-        subscription.memberDetails.length > 0
-          ? subscription.memberDetails.map((member) => ({ name: member.name, email: member.email }))
-          : subscription.memberEmails.map((email) => ({ name: getMemberNameFromEmail(email), email }));
       const response = await fetch('/api/reminders/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subscription: {
-            name: subscription.name,
-            plan: subscription.plan,
-            price: subscription.price,
-            cycle: subscription.cycle,
-            nextBilling: subscription.nextBilling,
-            status: subscription.status
-          },
-          members,
-          reminderDays
-        })
+        body: JSON.stringify({ subscriptionId: subscription.id })
       });
       const result = (await response.json().catch(() => null)) as
         | { ok?: boolean; message?: string; sent?: number; failed?: number; skipped?: number }
@@ -113,9 +105,9 @@ export function SubscriptionCard({
       const sent = result?.sent ?? 0;
       const failed = result?.failed ?? 0;
       const skipped = result?.skipped ?? 0;
-      const details = [failed > 0 ? `${failed} 封失败` : '', skipped > 0 ? `${skipped} 封近期已发送` : ''].filter(Boolean).join('，');
+      const details = [failed > 0 ? `${failed} 封失败` : '', skipped > 0 ? `${skipped} 封已处理或无需重发` : ''].filter(Boolean).join('，');
       setReminderState({
-        status: 'success',
+        status: failed > 0 || sent === 0 || skipped > 0 ? 'warning' : 'success',
         message: `已成功发送 ${sent} 封续费提醒${details ? `，${details}` : ''}。`
       });
     } catch (error) {
@@ -231,16 +223,18 @@ export function SubscriptionCard({
                 {shouldNotify ? (
                   <button
                     type="button"
-                    title={reminderState.status === 'sending' ? '正在发送续费提醒' : '发送续费提醒邮件'}
+                    title={dataSyncing ? '正在保存订阅数据' : reminderState.status === 'sending' ? '正在发送续费提醒' : '发送续费提醒邮件'}
                     aria-label={`提醒 ${subscription.name} 成员`}
                     onClick={handleSendReminder}
-                    disabled={reminderState.status === 'sending'}
+                    disabled={reminderState.status === 'sending' || dataSyncing}
                     className="theme-icon-button inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[#DDE4E0] bg-white px-2 text-[#B45C16] transition hover:bg-[#FDF0E5]"
                   >
                     {reminderState.status === 'sending' ? (
                       <LoaderCircle size={15} className="animate-spin" />
                     ) : reminderState.status === 'success' ? (
                       <CheckCircle2 size={15} />
+                    ) : reminderState.status === 'warning' ? (
+                      <AlertTriangle size={15} />
                     ) : (
                       <Mail size={15} />
                     )}
@@ -266,9 +260,11 @@ export function SubscriptionCard({
                 className={`mt-2 text-[11px] font-semibold ${
                   reminderState.status === 'error'
                     ? 'text-danger'
-                    : reminderState.status === 'success'
-                      ? 'text-success'
-                      : 'text-muted'
+                    : reminderState.status === 'warning'
+                      ? 'text-[#B45C16]'
+                      : reminderState.status === 'success'
+                        ? 'text-success'
+                        : 'text-muted'
                 }`}
               >
                 {reminderState.message}
@@ -416,9 +412,4 @@ function getBillingHint(daysUntilBilling: number | null) {
   if (daysUntilBilling === 0) return '今天扣费';
   if (daysUntilBilling === 1) return '明天扣费';
   return `${daysUntilBilling} 天后扣费`;
-}
-
-function getMemberNameFromEmail(email: string) {
-  const localPart = email.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
-  return localPart || '成员';
 }
