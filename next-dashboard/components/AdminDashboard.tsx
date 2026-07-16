@@ -1467,12 +1467,17 @@ export default function AdminDashboard() {
               />
               <EmailDeliverySetting onSessionExpired={openLoginDialog} />
               <ReminderSchedulerSetting onSessionExpired={openLoginDialog} />
-              <Field
-                label="前台版权信息"
-                value={configForm.copyrightText}
-                onChange={(value) => setConfigForm((current) => ({ ...current, copyrightText: value }))}
-                placeholder="© 2026 续费管家. 保留所有权利。"
-              />
+              <div className="grid gap-2">
+                <Field
+                  label="前台版权信息"
+                  value={configForm.copyrightText}
+                  onChange={(value) => setConfigForm((current) => ({ ...current, copyrightText: value }))}
+                  placeholder={'© 2026 <a href="https://example.com">续费管家</a>'}
+                />
+                <p className="text-xs font-medium leading-5 text-muted">
+                  支持 <code>{'<a href="https://example.com">链接文字</a>'}</code>，链接将在新窗口打开。
+                </p>
+              </div>
               <div className="my-1 h-px bg-[#E7ECE9]" />
               <FrontendDisplayModeSetting value={frontendDisplayModeForm} onChange={setFrontendDisplayModeForm} />
               <div className="my-1 h-px bg-[#E7ECE9]" />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Cloud, Eye, Film, Music2, PackageOpen, ReceiptText } from 'lucide-react';
 import { subscriptions as demoSubscriptions, type Subscription, type SubscriptionMember, type SubscriptionStatus } from '@/lib/data';
 import { isTemplateSlug, type TemplateSlug } from '@/lib/templates';
@@ -154,7 +154,9 @@ export function FrontendDisplay() {
       <div className="mx-auto w-full max-w-[1520px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
         {items.length > 0 ? <TemplateContent items={items} reminderDays={reminderDays} /> : <EmptyDisplayState />}
 
-        <footer className="mt-12 border-t border-[var(--border)] py-6 text-center text-xs font-medium text-muted">{copyrightText}</footer>
+        <footer className="mt-12 border-t border-[var(--border)] py-6 text-center text-xs font-medium text-muted">
+          <CopyrightText value={copyrightText} />
+        </footer>
       </div>
     </main>
   );
@@ -203,6 +205,54 @@ function DisplayLoadingState() {
       </div>
     </main>
   );
+}
+
+function CopyrightText({ value }: { value: string }) {
+  const parts: ReactNode[] = [];
+  const anchorPattern = /<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = anchorPattern.exec(value)) !== null) {
+    if (match.index > cursor) parts.push(value.slice(cursor, match.index));
+
+    const attributes = match[1] ?? '';
+    const label = match[2] ?? '';
+    const hrefMatch = attributes.match(/(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const href = getSafeCopyrightHref(hrefMatch?.[1] ?? hrefMatch?.[2] ?? '');
+
+    parts.push(
+      href ? (
+        <a
+          key={`${match.index}-${href}`}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-primary underline decoration-primary/40 underline-offset-2 transition hover:decoration-primary"
+        >
+          {label}
+        </a>
+      ) : (
+        label
+      )
+    );
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < value.length) parts.push(value.slice(cursor));
+  return parts;
+}
+
+function getSafeCopyrightHref(value: string) {
+  const href = value.trim();
+  if (!href || /[\u0000-\u001f\u007f]/.test(href)) return null;
+
+  try {
+    const url = new URL(href, 'https://copyright.local');
+    return ['http:', 'https:', 'mailto:', 'tel:'].includes(url.protocol) ? href : null;
+  } catch {
+    return null;
+  }
 }
 
 function restoreSubscriptionValues(value: unknown): Subscription[] | null {
