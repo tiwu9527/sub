@@ -228,7 +228,7 @@ function CopyrightText({ value }: { value: string }) {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-semibold text-primary underline decoration-primary/40 underline-offset-2 transition hover:decoration-primary"
+          className="text-inherit no-underline"
         >
           {label}
         </a>
