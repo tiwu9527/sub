@@ -1542,7 +1542,7 @@ export default function AdminDashboard() {
                 label="管理员账号"
                 value={loginForm.username}
                 onChange={(value) => setLoginForm((current) => ({ ...current, username: value }))}
-                placeholder="admin"
+                placeholder="请输入管理员账号"
               />
               <Field
                 label="密码"
