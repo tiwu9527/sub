@@ -1,6 +1,6 @@
-# 1Panel Docker Compose 部署说明
+# Docker Compose 部署说明
 
-本说明用于在装有 1Panel 的 Linux 服务器上手动部署本项目。项目由 Docker Compose 管理，不再使用一键安装脚本。
+本说明用于在常见 Linux 服务器上通过 Docker Compose 部署本项目，宿主机不需要安装 Node.js。
 
 部署后包含以下服务：
 
@@ -14,25 +14,28 @@
 
 服务器需要安装：
 
-- 1Panel
 - Docker Engine
 - Docker Compose v2
 - Git
+- OpenSSL
+- curl
 
-在 1Panel 终端或 SSH 中确认：
+通过 SSH 登录服务器后确认：
 
 ```bash
 docker --version
 docker compose version
 git --version
+openssl version
+curl --version
 ```
 
-Docker 镜像内已包含 Node.js 22，服务器宿主机不需要安装 Node.js。不要使用 1Panel 或其他面板附带的旧版 Node.js/npm 直接启动生产服务。
+Docker 镜像内已包含 Node.js 22，服务器宿主机不需要安装 Node.js，也不要使用其他来源的旧版 Node.js/npm 直接启动生产服务。
 
 建议同时准备：
 
 - 已解析到服务器的域名
-- 1Panel 可申请或导入的 HTTPS 证书
+- Nginx、Caddy、Traefik 等反向代理及可用的 HTTPS 证书
 - SMTP 服务信息（仅在需要邮件提醒时配置）
 
 ## 2. 获取代码
@@ -69,7 +72,7 @@ openssl rand -hex 32
 openssl rand -hex 32
 ```
 
-使用 1Panel 文件管理器或终端编辑器打开 `.env`，将两个输出分别填入 `ADMIN_SESSION_SECRET` 和 `REMINDER_CRON_SECRET`。不要重复使用同一个值，也不要把密钥粘贴到聊天、工单或公开日志中。
+使用终端编辑器打开 `.env`，将两个输出分别填入 `ADMIN_SESSION_SECRET` 和 `REMINDER_CRON_SECRET`。不要重复使用同一个值，也不要把密钥粘贴到聊天、工单或公开日志中。
 
 基础配置示例：
 
@@ -147,27 +150,40 @@ curl -fsS http://127.0.0.1:3100/api/public/dashboard >/dev/null \
 管理后台：http://服务器IP:3100/admin
 ```
 
-如果服务器防火墙没有开放该端口，先配置下一节的 1Panel 反向代理，通过域名访问即可。
+生产环境建议继续配置下一节的反向代理和 HTTPS，通过域名访问，不直接暴露应用端口。
 
-## 5. 配置 1Panel 反向代理和 HTTPS
+## 5. 配置反向代理和 HTTPS
 
-在 1Panel 中打开「网站」，创建反向代理站点：
+使用 Nginx、Caddy、Traefik 或现有网关，把域名代理到：
 
-- 主域名：填写已解析到服务器的域名
-- 代理地址：`http://127.0.0.1:3100`
-- HTTPS：申请或导入证书，并启用 HTTP 跳转 HTTPS
+```text
+http://127.0.0.1:3100
+```
 
 如果 `APP_PORT` 使用其他值，代理地址也要改成对应端口。
 
-确认反向代理保留原始 `Host`，并传递以下请求头：
+以 Nginx 为例，可在已经配置好域名和 HTTPS 证书的 `server` 块中加入：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3100;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+使用其他反向代理时，也要保留原始 `Host` 并传递：
 
 - `X-Forwarded-Host`
 - `X-Forwarded-For`
 - `X-Forwarded-Proto`
 
-这些请求头用于安全 Cookie、同源校验和登录限流。1Panel 的标准反向代理模板通常已经包含它们，若登录后立即失效或修改密码提示请求来源无效，应优先检查这部分配置。
+这些请求头用于安全 Cookie、同源校验和登录限流。若登录后立即失效或修改密码提示请求来源无效，应优先检查反向代理配置。
 
-确认 HTTPS 可以正常访问后，把 `.env` 修改为：
+为域名启用有效的 HTTPS 证书，并将 HTTP 请求重定向到 HTTPS。确认 HTTPS 可以正常访问后，把 `.env` 修改为：
 
 ```dotenv
 ADMIN_COOKIE_SECURE=true
@@ -179,7 +195,7 @@ ADMIN_COOKIE_SECURE=true
 docker compose up -d
 ```
 
-只通过反向代理提供服务时，不需要在公网防火墙中开放 `APP_PORT`。当前 Compose 端口会绑定服务器网卡，应使用 1Panel 安全组、云厂商安全组或服务器防火墙阻止公网直接访问该端口。
+只通过反向代理提供服务时，不需要在公网防火墙中开放 `APP_PORT`。当前 Compose 端口会绑定服务器网卡，应使用云厂商安全组或服务器防火墙阻止公网直接访问该端口。
 
 ## 6. 首次登录和管理员密码
 
