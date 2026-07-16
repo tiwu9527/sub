@@ -65,14 +65,15 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-分别生成两个独立的随机密钥：
+分别生成三个独立的随机密钥：
 
 ```bash
 openssl rand -hex 32
 openssl rand -hex 32
+openssl rand -hex 32
 ```
 
-使用终端编辑器打开 `.env`，将两个输出分别填入 `ADMIN_SESSION_SECRET` 和 `REMINDER_CRON_SECRET`。不要重复使用同一个值，也不要把密钥粘贴到聊天、工单或公开日志中。
+使用终端编辑器打开 `.env`，将三个输出分别填入 `ADMIN_SESSION_SECRET`、`SETTINGS_ENCRYPTION_KEY` 和 `REMINDER_CRON_SECRET`。不要重复使用同一个值，也不要把密钥粘贴到聊天、工单或公开日志中。
 
 基础配置示例：
 
@@ -81,6 +82,7 @@ APP_PORT=3100
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD='替换为高强度初始密码'
 ADMIN_SESSION_SECRET='替换为第一个随机密钥'
+SETTINGS_ENCRYPTION_KEY='替换为第二个随机密钥'
 ADMIN_COOKIE_SECURE=
 APP_TIME_ZONE=Asia/Shanghai
 DATABASE_URL=file:/app/data/subscriptions.db
@@ -95,7 +97,7 @@ MAIL_FROM=
 MAIL_REPLY_TO=
 SMTP_TEST_TO=
 
-REMINDER_CRON_SECRET='替换为第二个随机密钥'
+REMINDER_CRON_SECRET='替换为第三个随机密钥'
 REMINDER_CHECK_INTERVAL_MINUTES=60
 REMINDER_RUN_ON_START=true
 REMINDER_MAX_ATTEMPTS=3
@@ -107,13 +109,14 @@ REMINDER_MAX_ATTEMPTS=3
 - `ADMIN_USERNAME`：管理员登录账号，修改后立即影响后续登录
 - `ADMIN_PASSWORD`：新数据库首次登录使用的初始密码，建议至少 12 位且不与其他服务重复
 - `ADMIN_SESSION_SECRET`：管理员会话签名密钥，至少 32 字节；后续必须保持不变
+- `SETTINGS_ENCRYPTION_KEY`：用于加密后台保存的 SMTP 密码，必须是 `openssl rand -hex 32` 生成的 64 位十六进制值；后续必须保持不变
 - `ADMIN_COOKIE_SECURE`：使用 HTTPS 域名后设为 `true`；直接通过 HTTP 测试时先留空
 - `APP_TIME_ZONE`：业务时区，例如 `Asia/Shanghai`
 - `DATABASE_URL`：Docker 部署应保持为 `file:/app/data/subscriptions.db`
 - `REMINDER_CRON_SECRET`：网站与 worker 之间的任务密钥，至少 32 字节
-- `REMINDER_CHECK_INTERVAL_MINUTES`：自动提醒检查间隔，范围为 `0`～`1440`；`0` 表示关闭自动检查
-- `REMINDER_RUN_ON_START`：设为 `true` 时，worker 启动后会先执行一次检查
-- `REMINDER_MAX_ATTEMPTS`：失败投递的最大累计尝试次数，范围为 `1`～`10`
+- `REMINDER_CHECK_INTERVAL_MINUTES`：提醒配置首次写入数据库时导入的初始检查间隔；`0` 表示初始关闭
+- `REMINDER_RUN_ON_START`：提醒配置首次写入数据库时导入的“worker 启动后立即检查”初始值
+- `REMINDER_MAX_ATTEMPTS`：提醒配置首次写入数据库时导入的失败投递最大累计尝试次数
 
 `.env` 含有管理员初始密码、SMTP 密码和服务密钥，不能提交到 Git，也不要直接执行 `cat .env` 后复制完整输出。
 
@@ -215,33 +218,28 @@ docker compose up -d
 
 ## 7. 配置 SMTP 和自动提醒
 
-不需要邮件提醒时，SMTP 配置可以留空，网站其他功能仍可使用。
+管理员登录后，可在「工作区设置」直接修改「邮件投递服务」和「自动提醒任务」。设置保存到 SQLite；保存后的数据库配置优先于 `.env`，无需重启容器。
 
-启用邮件提醒时可按以下示例配置，其中 `SMTP_HOST`、有效的 `SMTP_PORT` 和 `MAIL_FROM` 是必填项：
+邮件投递服务支持修改：
 
-```dotenv
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_REQUIRE_TLS=true
-SMTP_USER=mailer@example.com
-SMTP_PASS='SMTP 密码或授权码'
-MAIL_FROM='续费管家 <mailer@example.com>'
-MAIL_REPLY_TO=support@example.com
-SMTP_TEST_TO=your-test@example.com
-```
+- 启用状态、SMTP 主机和端口
+- SMTPS 或 STARTTLS 连接方式
+- SMTP 用户名和密码/授权码
+- 发件人、回复邮箱和默认测试收件邮箱
 
-配置规则：
+SMTP 密码使用 `SETTINGS_ENCRYPTION_KEY` 通过 AES-256-GCM 加密后写入数据库，后台接口只返回“是否已配置”，不会返回密码或密文。密码框留空会保留现有密码，也可显式清除。丢失或更换加密密钥后，已保存的 SMTP 密码无法解密，需要重新输入。
+
+邮件配置规则：
 
 - 端口 `465` 通常使用 `SMTP_SECURE=true`
 - 端口 `587` 通常使用 `SMTP_SECURE=false` 和 `SMTP_REQUIRE_TLS=true`
 - `SMTP_USER` 与 `SMTP_PASS` 必须同时填写或同时留空
 - `MAIL_REPLY_TO` 和 `SMTP_TEST_TO` 可选
 - 部分邮箱服务必须使用授权码，不能使用网页登录密码
-- `REMINDER_CHECK_INTERVAL_MINUTES=0` 只关闭 worker 自动检查，后台手动执行仍然可用
-- 自动检查按 worker 启动后的间隔运行，不是固定整点 Cron
 
-修改 `.env` 后执行 `docker compose up -d`，再登录管理后台，在「工作区设置 → 邮件投递服务」中检测连接并发送测试邮件。
+自动提醒任务支持修改启用状态、检查间隔、worker 启动后是否立即检查，以及失败投递最大尝试次数。worker 每分钟向服务端轮询一次，由服务端读取最新数据库设置并判断是否到期，因此禁用或修改间隔最迟约一分钟生效；后台「立即检查」不受自动任务启停状态影响。
+
+`.env` 中原有 SMTP 参数只在尚未保存邮件配置时作为初始值；提醒参数会在 worker 首次轮询或管理员首次保存时导入数据库，便于旧部署平滑升级。修改尚未导入的初始值后仍需执行 `docker compose up -d`；配置进入数据库后应继续在后台维护。
 
 ## 8. 数据和备份
 
@@ -284,7 +282,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-`.env` 不受 `git pull` 影响，现有端口、SMTP 配置和密钥会继续保留。不要删除 `.env`，也不要重新生成 `ADMIN_SESSION_SECRET` 或 `REMINDER_CRON_SECRET`。
+`.env` 不受 `git pull` 影响，现有端口、初始配置和密钥会继续保留。不要删除 `.env`，也不要重新生成 `ADMIN_SESSION_SECRET`、`SETTINGS_ENCRYPTION_KEY` 或 `REMINDER_CRON_SECRET`。
 
 如果 `git status --short` 显示已修改的受版本控制文件，先确认改动来源并妥善保存，不要直接覆盖。更新后再次检查健康接口和容器日志。
 
@@ -347,7 +345,7 @@ docker compose ps
 docker compose logs --tail=200 next-dashboard
 ```
 
-重点检查 `.env` 是否存在、两个密钥是否至少 32 字节，以及数据库卷是否可写。
+重点检查 `.env` 是否存在、会话与 worker 密钥是否至少 32 字节、`SETTINGS_ENCRYPTION_KEY` 是否为 64 位十六进制值，以及数据库卷是否可写。
 
 ### worker 没有启动或不断重启
 
@@ -380,7 +378,7 @@ ss -ltnp | grep ':3100'
 
 ### 配置修改后没有生效
 
-`docker compose restart` 不会重新读取已变化的环境配置。修改 `.env` 后应执行：
+在管理后台保存的邮件与提醒设置会直接写入数据库，无需重启。若修改的是 `.env` 中的部署级配置，`docker compose restart` 不会重新读取变化，应执行：
 
 ```bash
 docker compose up -d

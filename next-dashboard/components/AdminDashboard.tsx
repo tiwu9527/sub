@@ -1415,7 +1415,7 @@ export default function AdminDashboard() {
       {configOpen ? (
         <div className="theme-overlay fixed inset-0 z-50 grid place-items-center bg-[#17211B]/45 p-4 backdrop-blur-sm" onClick={closeConfigEditor}>
           <section
-            className="theme-modal w-full max-w-[520px] rounded-xl border border-[#DDE4E0] bg-white p-6 shadow-[0_24px_70px_rgba(23,33,27,.22)]"
+            className="theme-modal max-h-[calc(100vh-2rem)] w-full max-w-[520px] overflow-y-auto rounded-xl border border-[#DDE4E0] bg-white p-6 shadow-[0_24px_70px_rgba(23,33,27,.22)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4">

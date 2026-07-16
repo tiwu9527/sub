@@ -33,7 +33,13 @@ export async function POST(request: Request) {
   const payload = await readPayload(request);
   if (!payload.ok) return payload.response;
 
-  const smtpConfig = getSmtpConfig();
+  let smtpConfig: Awaited<ReturnType<typeof getSmtpConfig>>;
+  try {
+    smtpConfig = await getSmtpConfig();
+  } catch (error) {
+    console.error('Failed to load SMTP configuration for test email.', getSafeError(error));
+    return apiError('EMAIL_SETTINGS_UNAVAILABLE', '暂时无法读取邮件投递配置。', 503);
+  }
   if (!smtpConfig.ok) {
     return apiError('SMTP_NOT_CONFIGURED', smtpConfig.message, 503);
   }
@@ -188,4 +194,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function apiError(code: string, message: string, status: number) {
   return NextResponse.json({ ok: false, code, message }, { status });
+}
+
+function getSafeError(error: unknown) {
+  return error instanceof Error ? error.message.slice(0, 300) : 'Unknown email settings error';
 }

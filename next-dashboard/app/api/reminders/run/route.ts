@@ -24,7 +24,10 @@ export async function POST(request: Request) {
     if (!hasSameOrigin(request)) return apiError('INVALID_ORIGIN', '请求来源无效。', 403);
   }
 
-  const result = await runReminderJob({ source: cronAuthorized ? 'scheduled' : 'manual' });
+  const result = await runReminderJob({
+    source: cronAuthorized ? 'scheduled' : 'manual',
+    startup: cronAuthorized && request.headers.get('x-reminder-trigger')?.trim().toLowerCase() === 'startup'
+  });
   if (result.status === 'locked') return json({ code: 'REMINDER_JOB_LOCKED', ...result }, 409);
   if (!result.ok) return json({ code: 'REMINDER_JOB_FAILED', ...result }, 502);
   return json(result);

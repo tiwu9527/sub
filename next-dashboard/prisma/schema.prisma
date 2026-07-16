@@ -15,6 +15,35 @@ model AdminCredential {
   updatedAt         DateTime @updatedAt
 }
 
+model EmailSettings {
+  id                    String   @id @default("default")
+  enabled               Boolean  @default(false)
+  host                  String   @default("")
+  port                  Int      @default(587)
+  secure                Boolean  @default(false)
+  requireTls             Boolean  @default(true)
+  username               String   @default("")
+  passwordEncrypted     String?
+  mailFrom              String   @default("")
+  mailReplyTo           String   @default("")
+  testTo                String   @default("")
+  revision              Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model ReminderSettings {
+  id              String    @id @default("default")
+  enabled         Boolean   @default(false)
+  intervalMinutes Int       @default(60)
+  runOnStart      Boolean   @default(true)
+  maxAttempts     Int       @default(3)
+  nextScheduledAt DateTime?
+  revision        Int       @default(1)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
 model WorkspaceSettings {
   id                  String         @id @default("default")
   workspaceName       String         @default("Personal workspace")

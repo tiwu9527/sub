@@ -5,6 +5,7 @@ import { Prisma, type ReminderDelivery, type Subscription, type SubscriptionMemb
 import { createSmtpTransport, getSmtpConfig, getSmtpErrorMessage } from '@/lib/email-service';
 import { prisma } from '@/lib/prisma';
 import { buildReminderContent, getCalendarNow } from '@/lib/reminder-content';
+import { claimScheduledReminder, getReminderSettings } from '@/lib/reminder-settings';
 import { getEffectiveSubscriptionStatus } from '@/lib/subscription-status';
 
 const schedulerLeaseKey = 'reminder-delivery-job';
@@ -15,7 +16,7 @@ export type ReminderJobSource = 'manual' | 'scheduled';
 
 export type ReminderJobResult = {
   ok: boolean;
-  status: 'completed' | 'failed' | 'locked';
+  status: 'completed' | 'failed' | 'locked' | 'skipped';
   runId?: string;
   checked: number;
   eligible: number;
@@ -36,6 +37,7 @@ type ClaimedRecipient = {
 export async function runReminderJob(options: {
   source: ReminderJobSource;
   subscriptionId?: string;
+  startup?: boolean;
 }): Promise<ReminderJobResult> {
   const owner = randomUUID();
   const leaseAcquired = await acquireSchedulerLease(owner);
@@ -54,6 +56,24 @@ export async function runReminderJob(options: {
 
   let runId = '';
   try {
+    const scheduler = options.source === 'scheduled'
+      ? await claimScheduledReminder({ startup: options.startup === true })
+      : { due: true, settings: await getReminderSettings(), message: '' };
+
+    if (!scheduler.due) {
+      return {
+        ok: true,
+        status: 'skipped',
+        checked: 0,
+        eligible: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        message: scheduler.message
+      };
+    }
+
+    const maximumAttempts = scheduler.settings.maxAttempts;
     const run = await prisma.reminderRun.create({ data: { source: options.source } });
     runId = run.id;
     const workspace = await prisma.workspaceSettings.findUnique({ where: { id: 'default' } });
@@ -133,7 +153,7 @@ export async function runReminderJob(options: {
       };
     }
 
-    const smtpConfig = getSmtpConfig();
+    const smtpConfig = await getSmtpConfig();
     if (!smtpConfig.ok) {
       await completeRun(runId, {
         status: 'failed',
@@ -161,7 +181,7 @@ export async function runReminderJob(options: {
     let skipped = 0;
     for (const subscription of eligibleSubscriptions) {
       for (const member of subscription.members) {
-        const delivery = await claimDelivery(subscription, member, options.source);
+        const delivery = await claimDelivery(subscription, member, options.source, maximumAttempts);
         if (delivery) claims.push({ delivery, subscription, member });
         else skipped += 1;
       }
@@ -268,7 +288,8 @@ export async function runReminderJob(options: {
 }
 
 export async function getReminderJobStatus() {
-  const [lastRun, recentDeliveries] = await Promise.all([
+  const [settings, lastRun, recentDeliveries] = await Promise.all([
+    getReminderSettings(),
     prisma.reminderRun.findFirst({ orderBy: { startedAt: 'desc' } }),
     prisma.reminderDelivery.findMany({
       orderBy: { updatedAt: 'desc' },
@@ -288,8 +309,7 @@ export async function getReminderJobStatus() {
   ]);
 
   return {
-    enabled: parseIntervalMinutes() > 0,
-    intervalMinutes: parseIntervalMinutes(),
+    ...settings,
     cronConfigured: Buffer.byteLength(process.env.REMINDER_CRON_SECRET || '', 'utf8') >= 32,
     lastRun,
     recentDeliveries
@@ -299,7 +319,8 @@ export async function getReminderJobStatus() {
 async function claimDelivery(
   subscription: SubscriptionWithMembers,
   member: SubscriptionMember,
-  source: ReminderJobSource
+  source: ReminderJobSource,
+  maximumAttempts: number
 ) {
   const uniqueKey = {
     subscriptionId: subscription.id,
@@ -326,7 +347,6 @@ async function claimDelivery(
   });
   if (!existing || existing.status === 'sent') return null;
 
-  const maximumAttempts = parseMaximumAttempts();
   if (existing.attemptCount >= maximumAttempts) return null;
   const staleBefore = new Date(Date.now() - staleDeliveryMs);
   const claimed = await prisma.reminderDelivery.updateMany({
@@ -409,14 +429,4 @@ function buildRunMessage(result: {
 }) {
   const summary = `提醒检查完成：检查 ${result.checked} 项，命中 ${result.eligible} 项，发送 ${result.sent} 封，失败 ${result.failed} 封，跳过 ${result.skipped} 封。`;
   return result.firstFailure ? `${summary} ${result.firstFailure}` : summary;
-}
-
-function parseMaximumAttempts() {
-  const value = Number.parseInt(process.env.REMINDER_MAX_ATTEMPTS || '3', 10);
-  return Number.isInteger(value) ? Math.min(Math.max(value, 1), 10) : 3;
-}
-
-function parseIntervalMinutes() {
-  const value = Number.parseInt(process.env.REMINDER_CHECK_INTERVAL_MINUTES || '60', 10);
-  return Number.isInteger(value) ? Math.min(Math.max(value, 0), 24 * 60) : 60;
 }

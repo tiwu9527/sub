@@ -1,6 +1,8 @@
 import 'server-only';
 
 import nodemailer from 'nodemailer';
+import { getEmailSettings } from '@/lib/email-settings';
+import { SecretBoxConfigurationError, SecretBoxDecryptionError } from '@/lib/secret-box';
 
 export type SmtpConfig = {
   host: string;
@@ -15,35 +17,29 @@ export type SmtpConfig = {
 
 export type SmtpConfigResult = { ok: true; value: SmtpConfig } | { ok: false; message: string };
 
-export function getSmtpConfig(): SmtpConfigResult {
-  const host = process.env.SMTP_HOST?.trim() || '';
-  const from = normalizeSingleLine(process.env.MAIL_FROM, 320);
-  const replyTo = normalizeSingleLine(process.env.MAIL_REPLY_TO, 254);
-  const testTo = normalizeEmailAddress(process.env.SMTP_TEST_TO);
-  const user = process.env.SMTP_USER?.trim() || '';
-  const pass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
-  const port = Number.parseInt(process.env.SMTP_PORT || '587', 10);
-  const secureSetting = normalizeBooleanSetting(process.env.SMTP_SECURE);
-  const requireTlsSetting = normalizeBooleanSetting(process.env.SMTP_REQUIRE_TLS);
+export async function getSmtpConfig(): Promise<SmtpConfigResult> {
+  let settings: Awaited<ReturnType<typeof getEmailSettings>>;
+  try {
+    settings = await getEmailSettings();
+  } catch (error) {
+    if (error instanceof SecretBoxConfigurationError || error instanceof SecretBoxDecryptionError) {
+      return { ok: false, message: error.message };
+    }
+    throw error;
+  }
 
+  const { enabled, host, port, secure, requireTls, username: user, password: pass, mailFrom: from, mailReplyTo: replyTo, testTo } = settings;
+
+  if (!enabled) return { ok: false, message: '邮件投递服务已停用。' };
   if (!host || !from || !Number.isInteger(port) || port < 1 || port > 65535) {
-    return { ok: false, message: '邮件服务尚未配置，请设置 SMTP_HOST、SMTP_PORT 和 MAIL_FROM。' };
-  }
-  if (secureSetting === null) {
-    return { ok: false, message: 'SMTP_SECURE 只能设置为 true 或 false。' };
-  }
-  if (requireTlsSetting === null) {
-    return { ok: false, message: 'SMTP_REQUIRE_TLS 只能设置为 true 或 false。' };
+    return { ok: false, message: '邮件服务尚未配置，请填写 SMTP 主机、端口和发件人。' };
   }
   if ((user && !pass) || (!user && pass)) {
-    return { ok: false, message: 'SMTP_USER 与 SMTP_PASS 必须同时配置。' };
+    return { ok: false, message: 'SMTP 用户名与密码必须同时配置。' };
   }
-  if (process.env.SMTP_TEST_TO?.trim() && !testTo) {
+  if (settings.source === 'environment' && process.env.SMTP_TEST_TO?.trim() && !testTo) {
     return { ok: false, message: 'SMTP_TEST_TO 不是有效的邮箱地址。' };
   }
-
-  const secure = secureSetting ?? port === 465;
-  const requireTls = secure ? false : (requireTlsSetting ?? port === 587);
 
   return {
     ok: true,
@@ -51,7 +47,7 @@ export function getSmtpConfig(): SmtpConfigResult {
       host,
       port,
       secure,
-      requireTls,
+      requireTls: secure ? false : requireTls,
       auth: user && pass ? { user, pass } : undefined,
       from,
       replyTo,
@@ -143,14 +139,6 @@ export function getSmtpErrorMessage(error: unknown) {
   }
 
   return response ? `邮件服务返回错误：${response.slice(0, 240)}` : '邮件服务暂时不可用，请稍后重试。';
-}
-
-function normalizeBooleanSetting(value: string | undefined) {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return undefined;
-  if (normalized === 'true') return true;
-  if (normalized === 'false') return false;
-  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
